@@ -1,6 +1,20 @@
 from setuptools import setup, Extension
 import pybind11
-import os, subprocess, tempfile
+import os, subprocess, tempfile, glob, site as _site
+
+# ── Clean stale C extensions from site-packages ─────────────────
+# Editable install (pip install -e .) does NOT remove old .so files
+# left in site-packages by previous non-editable installs.  Python's
+# PathFinder (sys.meta_path[2]) runs before the editable finder
+# (sys.meta_path[4]), so the stale .so is loaded instead of the
+# newly built one, silently discarding all C++ changes.
+for sp in _site.getsitepackages():
+    for f in glob.glob(os.path.join(sp, 'irsim_core*.so*')):
+        try:
+            os.remove(f)
+            print(f'[setup] removed stale: {f}')
+        except OSError:
+            pass
 
 # ── Detect SIMD ────────────────────────────────────────────────
 cpp_args = ["-O3", "-march=native", "-std=c++17"]
