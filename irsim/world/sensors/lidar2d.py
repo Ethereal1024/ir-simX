@@ -221,8 +221,6 @@ class Lidar2D:
 
         # Build obstacle dict list, excluding self and unobstructed
         obs_dicts = []
-        has_map_obs = False
-        has_non_convex = False
         parent_state = self.parent.state if self.parent is not None else state
         heading = float(parent_state[2, 0]) if parent_state.shape[0] >= 3 else 0.0
 
@@ -237,30 +235,13 @@ class Lidar2D:
                     has_map_obs = True
                 continue
             if shape == "polygon":
-                # C++ edge-by-edge has 50%+ false positive rate for concave polygons
-                verts = getattr(obj, 'vertices', None)
-                if verts is not None and verts.shape[1] >= 3:
-                    n = verts.shape[1]
-                    sign = 0
-                    for i in range(n):
-                        x1, y1 = verts[0, i], verts[1, i]
-                        x2, y2 = verts[0, (i+1)%n], verts[1, (i+1)%n]
-                        x3, y3 = verts[0, (i+2)%n], verts[1, (i+2)%n]
-                        cross = (x2-x1)*(y3-y2) - (y2-y1)*(x3-x2)
-                        if cross != 0:
-                            if sign == 0:
-                                sign = 1 if cross > 0 else -1
-                            elif (cross > 0 and sign < 0) or (cross < 0 and sign > 0):
-                                has_non_convex = True
-                                break
-                if has_non_convex:
-                    continue
+                # C++ edge-by-edge has ~50% false positive rate for concave
+                # polygons, but Shapely crashes with 1200+ beams on invalid
+                # polygons. C++ is the only stable option.
+                pass  # add polygon to C++ obstacle list below
             d = self._obj_to_c_dict(obj)
             if d:
                 obs_dicts.append(d)
-
-        if has_non_convex:
-            return False
 
         if not obs_dicts:
             self.range_data[:] = self.range_max
