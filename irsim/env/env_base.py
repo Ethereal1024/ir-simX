@@ -488,7 +488,12 @@ class EnvBase:
                 vel_py[1, 0] = vel[1] if vel[1] is not None else 0.0
 
             py_obj.collision_flag = collided
-            # Update geometry for rendering and collision (mirrors obj.step())
+
+            # Record trajectory (mirrors obj.step() appending state)
+            if hasattr(py_obj, 'trajectory') and isinstance(py_obj.trajectory, list):
+                py_obj.trajectory.append(py_obj.state.copy())
+
+            # Update geometry for rendering (mirrors obj.step())
             if py_obj.gf is not None:
                 py_obj._geometry = py_obj.gf.step(py_obj.state)
                 py_obj._geometry_valid = True
