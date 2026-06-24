@@ -19,11 +19,13 @@ static Obstacle py_to_obstacle(const py::dict& d,
         obs.type = ShapeType::CIRCLE;
         obs.center = {d["x"].cast<float>(), d["y"].cast<float>()};
         obs.radius = d["radius"].cast<float>();
+        obs.compute_aabb();
     } else if (type == "rect") {
         obs.type = ShapeType::RECT;
         obs.center = {d["x"].cast<float>(), d["y"].cast<float>()};
         obs.half_w = d["half_w"].cast<float>();
         obs.half_h = d["half_h"].cast<float>();
+        obs.compute_aabb();
     } else if (type == "polygon") {
         obs.type = ShapeType::POLYGON;
         auto vlist = d["vertices"].cast<py::list>();

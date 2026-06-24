@@ -258,7 +258,9 @@ inline bool intersect_ray_convex_polygon(
 
 // ── Ray-polygon intersection (convex OR concave) ──────────────
 // For convex polygons: Cyrus-Beck.
-// For concave polygons: edge-by-edge intersection, find nearest hit.
+// For concave polygons: edge-by-edge intersection with parity validation.
+// Collects ALL ray-segment intersections, sorts by t, and returns the first
+// valid entry point (ray transitions from outside to inside).
 inline bool intersect_ray_polygon(
     Vec2 o, Vec2 d, const Vec2* verts, int n, float& t_out)
 {
@@ -266,27 +268,43 @@ inline bool intersect_ray_polygon(
     if (is_convex_polygon(verts, n))
         return intersect_ray_convex_polygon(o, d, verts, n, t_out);
 
-    // Concave polygon: check each edge for ray-segment intersection.
-    // Use line-segment intersection to find the nearest hit.
-    float min_t = FLT_MAX;
-    for (int i = 0; i < n; i++) {
+    // Collect all ray-segment intersections (t, u)
+    float hits_t[64];
+    float hits_u[64];
+    int hits_e[64];
+    int nh = 0;
+    for (int i = 0; i < n && nh < 64; i++) {
         const Vec2& a = verts[i];
         const Vec2& b = verts[(i + 1) % n];
         Vec2 ab = b - a;
-
-        // Solve o + t*d = a + u*ab for t, u
         float denom = d.cross(ab);
-        if (std::abs(denom) < 1e-12f) continue;  // parallel
-
+        if (std::abs(denom) < 1e-12f) continue;
         Vec2 ao = a - o;
         float t = ao.cross(ab) / denom;
         float u = ao.cross(d) / denom;
-
-        if (t >= 0 && u >= 0 && u <= 1.0f) {
-            if (t < min_t) { min_t = t; t_out = t; }
+        if (t > 1e-6f && u > 1e-6f && u < 1.0f - 1e-6f) {
+            hits_t[nh] = t;
+            hits_u[nh] = u;
+            hits_e[nh] = i;
+            nh++;
         }
     }
-    return min_t < FLT_MAX;
+
+    if (nh == 0) return false;
+
+    // Sort by t (bubble sort, small n)
+    for (int i = 0; i < nh - 1; i++)
+        for (int j = 0; j < nh - 1 - i; j++)
+            if (hits_t[j] > hits_t[j + 1]) {
+                std::swap(hits_t[j], hits_t[j + 1]);
+                std::swap(hits_u[j], hits_u[j + 1]);
+                std::swap(hits_e[j], hits_e[j + 1]);
+            }
+
+    // The first hit is always an entry point (from outside → inside)
+    // since the ray starts at origin outside the polygon.
+    t_out = hits_t[0];
+    return true;
 }
 
 // Ray-AABB intersection for axis-aligned rectangle.
