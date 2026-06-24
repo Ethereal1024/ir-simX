@@ -1,3 +1,4 @@
+import os, sys; sys.path.insert(0, '/home/fanshu/Workplace/ir-simX')
 import irsim
 
 """
@@ -50,7 +51,9 @@ Mouse Position Attributes:
 - env.mouse_pos: Current mouse position
 """
 
+
 env = irsim.make(save_ani=False, full=False)
+
 
 for _i in range(10000):
     env.step()
