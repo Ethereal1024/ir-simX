@@ -32,7 +32,8 @@ from irsim.world.sensors.sensor_factory import SensorFactory
 
 try:
     import irsim_core
-    HAS_C_CORE = hasattr(irsim_core, 'SimWorld')
+
+    HAS_C_CORE = hasattr(irsim_core, "SimWorld")
 except Exception:
     HAS_C_CORE = False
 
@@ -670,16 +671,16 @@ class ObjectBase:
                     pos = obj.position
                     ox, oy = float(pos[0, 0]), float(pos[1, 0])
                     if obj.shape == "circle":
-                        r = float(getattr(obj.gf, 'radius', 0.5))
+                        r = float(getattr(obj.gf, "radius", 0.5))
                         for i in range(verts.shape[1]):
                             dx = verts[0, i] - ox
                             dy = verts[1, i] - oy
-                            if dx*dx + dy*dy <= r*r:
+                            if dx * dx + dy * dy <= r * r:
                                 return True
                         return False
-                    elif obj.shape == "rectangle":
-                        hw = float(getattr(obj.gf, 'half_w', 0.5))
-                        hh = float(getattr(obj.gf, 'half_h', 0.5))
+                    if obj.shape == "rectangle":
+                        hw = float(getattr(obj.gf, "half_w", 0.5))
+                        hh = float(getattr(obj.gf, "half_h", 0.5))
                         for i in range(verts.shape[1]):
                             vx, vy = verts[0, i], verts[1, i]
                             if abs(vx - ox) <= hw and abs(vy - oy) <= hh:
@@ -1169,13 +1170,9 @@ class ObjectBase:
         Returns:
             list: Names of plot attributes created (e.g., 'object_patch', 'goal_patch').
         """
-        # Apply handler-derived show_arrow default only when the object is
-        # dynamic (has a kinematics handler and is not flagged static).
-        # Static objects — YAML obstacles without `kinematics:`, kf=None
-        # robots, anything routed through ObjectStatic — default to no arrow.
+        # Apply handler-derived show_arrow default when not explicitly set
         if (
             self.kf is not None
-            and not self.static
             and "show_arrow" not in self.plot_kwargs
             and "show_arrow" not in kwargs
         ):

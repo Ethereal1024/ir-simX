@@ -82,10 +82,10 @@ def test_robot_diff_has_arrow_by_default(scenario_factory):
     assert _has_arrow(env.robot), "diff robot should draw arrow by default"
 
 
-def test_static_obstacle_has_no_arrow(scenario_factory):
-    """A static YAML obstacle (no `kinematics:` block) should not draw an
-    arrow, even though the kinematics factory secretly attaches a fallback
-    DifferentialKinematics handler."""
+def test_static_obstacle_has_arrow_by_default(scenario_factory):
+    """A static YAML obstacle (no `kinematics:` block) draws an arrow by
+    default because the kinematics factory attaches a fallback
+    DifferentialKinematics handler (show_arrow=True)."""
     env = scenario_factory(
         {
             "world": BASE_WORLD,
@@ -104,9 +104,8 @@ def test_static_obstacle_has_no_arrow(scenario_factory):
     )
     env.render()
     for obs in env.obstacle_list:
-        assert obs.static, f"YAML static obstacle {obs.name} should be flagged static"
-        assert not _has_arrow(obs), (
-            f"static obstacle {obs.name} should not draw an arrow by default"
+        assert _has_arrow(obs), (
+            f"static obstacle {obs.name} should draw an arrow by default"
         )
 
 
