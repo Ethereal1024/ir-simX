@@ -278,9 +278,13 @@ class Lidar2D:
             return {"type": "circle", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
                     "radius": float(getattr(gf, 'radius', 0.5))}
         elif shape == "rectangle":
+            verts = getattr(gf, 'vertices', None)
+            if verts is not None and verts.shape[1] == 4:
+                return {"type": "polygon", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                        "vertices": [[float(verts[0, i]), float(verts[1, i])]
+                                     for i in range(verts.shape[1])]}
             return {"type": "rect", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                    "half_w": float(getattr(gf, 'half_w', 0.5)),
-                    "half_h": float(getattr(gf, 'half_h', 0.5))}
+                    "half_w": 0.5, "half_h": 0.5}
         elif shape == "polygon":
             verts = getattr(obj, 'vertices', None)
             if verts is None or verts.shape[1] < 3:

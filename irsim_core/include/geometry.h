@@ -245,9 +245,9 @@ inline bool intersect_ray_convex_polygon(
         float t = ao.dot({nx, ny}) / denom;
         if (std::abs(t) < 1e-10f) continue;  // ignore edge-on intersections at origin
         if (denom > 0) {
-            if (t > t_enter) t_enter = t;
-        } else {
             if (t < t_exit) t_exit = t;
+        } else {
+            if (t > t_enter) t_enter = t;
         }
     }
     if (t_enter > t_exit) return false;

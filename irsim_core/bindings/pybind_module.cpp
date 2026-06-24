@@ -173,12 +173,12 @@ PYBIND11_MODULE(_core, m) {
         int n = (int)buf.size;
         auto angles_ptr = static_cast<const float*>(buf.ptr);
 
-        // Parse obstacles from Python list
         std::vector<Obstacle> obs_list;
-        std::vector<Vec2> verts_buf;  // persistent storage for polygon vertices
+        std::vector<std::vector<Vec2>> verts_bufs;  // per-obstacle vertex storage
         for (auto item : obstacles_py) {
             auto d = item.cast<py::dict>();
-            obs_list.push_back(py_to_obstacle(d, &verts_buf));
+            verts_bufs.emplace_back();
+            obs_list.push_back(py_to_obstacle(d, &verts_bufs.back()));
         }
 
         auto result = py::array_t<float>(n);
@@ -198,10 +198,11 @@ PYBIND11_MODULE(_core, m) {
         auto angles_ptr = static_cast<const float*>(buf.ptr);
 
         std::vector<Obstacle> obs_list;
-        std::vector<Vec2> verts_buf;
+        std::vector<std::vector<Vec2>> verts_bufs;
         for (auto item : obstacles_py) {
             auto d = item.cast<py::dict>();
-            obs_list.push_back(py_to_obstacle(d, &verts_buf));
+            verts_bufs.emplace_back();
+            obs_list.push_back(py_to_obstacle(d, &verts_bufs.back()));
         }
 
         auto result = py::array_t<float>(n);

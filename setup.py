@@ -22,7 +22,7 @@ try:
         os.unlink(f.name)
 except: pass
 if has_avx2:
-    cpp_args.extend(["-mavx2", "-mfma"])
+    cpp_args.extend(["-mavx2", "-mfma", "-DUSE_AVX2"])
     print("irsim_core: AVX2 enabled")
 
 # ── C++ extension ──────────────────────────────────────────────
