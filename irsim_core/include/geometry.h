@@ -281,6 +281,10 @@ inline bool intersect_ray_polygon(
         float t = ao.cross(ab) / denom;
         float u = ao.cross(d) / denom;
 
+        // origin exactly on edge → distance 0
+        if (std::abs(t) <= 1e-6f && u >= -1e-6f && u <= 1.0f + 1e-6f) {
+            t_out = 0.0f; return true;
+        }
         if (t > 1e-6f && u > 1e-6f && u < 1.0f - 1e-6f) {
             if (t < min_t) { min_t = t; }
         }
