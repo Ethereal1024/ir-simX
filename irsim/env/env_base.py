@@ -32,6 +32,12 @@ from irsim.util.random import rng, set_seed
 from irsim.util.util import normalize_actions, to_numpy
 from irsim.world import ObjectBase, ObjectFactory
 
+try:
+    import irsim_core as _cc
+    HAS_C_CORE = hasattr(_cc, 'SimWorld')
+except Exception:
+    HAS_C_CORE = False
+
 from .env_logger import EnvLogger
 
 try:
@@ -190,6 +196,9 @@ class EnvBase:
         # Wire env reference to all objects for param access
         self._wire_env_to_objects()
 
+        # Build C++ SimWorld for accelerated simulation
+        self._build_cpp_world()
+
         self.build_tree()
         self._env_param.objects = self._objects
         self.validate_unique_names()
@@ -254,6 +263,222 @@ class EnvBase:
         for obj in self._objects:
             obj._env = self
 
+    # ------------------------------------------------------------------
+    #  C++ accelerated helpers
+    # ------------------------------------------------------------------
+
+    def _build_cpp_world(self) -> None:
+        """Build or rebuild the C++ SimWorld from current Python objects."""
+        if not HAS_C_CORE:
+            self._cpp_world = None
+            return
+
+        w = _cc.SimWorld()
+        w.set_step_time(self._world.step_time)
+
+        # Add robots
+        for obj in self.objects:
+            if obj.role != "robot":
+                continue
+            s = obj.state
+            kin = getattr(obj, 'kinematics', 'diff')
+            kin_map = {'diff': 0, 'omni': 1, 'acker': 2, 'omni_angular': 3}
+            kid = kin_map.get(kin, 0)
+            vmin = getattr(obj, 'vel_min', np.array([-1.0, -1.0])).ravel().astype(np.float32)
+            vmax = getattr(obj, 'vel_max', np.array([ 1.0,  1.0])).ravel().astype(np.float32)
+            info = getattr(obj, 'info', None)
+            vacc = info.acce.ravel().astype(np.float32) if info is not None else np.array([1.0, 1.0], dtype=np.float32)
+            # Pad to 3 elements for C++ (omni_angular uses 3)
+            vmin3 = np.zeros(3, dtype=np.float32); vmin3[:len(vmin)] = vmin
+            vmax3 = np.zeros(3, dtype=np.float32); vmax3[:len(vmax)] = vmax
+            vacc3 = np.zeros(3, dtype=np.float32); vacc3[:len(vacc)] = vacc
+            rid = w.add_robot(kid, float(s[0, 0]), float(s[1, 0]), float(s[2, 0]),
+                              vmin3, vmax3, vacc3)
+
+            # Set robot shape vertices for collision (use original_vertices = local frame)
+            orig_verts = getattr(obj, 'original_vertices', None)
+            if orig_verts is not None and orig_verts.shape[1] >= 3:
+                flat = orig_verts.flatten().astype(np.float32)
+                w.set_robot_vertices(rid, flat)
+            else:
+                # Fallback to vertices (may be world-frame, but better than default)
+                verts = getattr(obj, 'vertices', None)
+                if verts is not None and verts.shape[1] >= 3:
+                    flat = verts.flatten().astype(np.float32)
+                    w.set_robot_vertices(rid, flat)
+
+        # Add static obstacles
+        for obj in self.objects:
+            if obj.role != "obstacle" or obj.unobstructed or not obj.static:
+                continue
+            shape = getattr(obj, 'shape', None)
+            pos = getattr(obj, 'position', None)
+            if pos is None or pos.size < 2:
+                continue
+            x, y = float(pos[0, 0]), float(pos[1, 0])
+            gf = getattr(obj, 'gf', None)
+
+            if shape == 'circle':
+                if gf is None:
+                    continue
+                w.add_obstacle({
+                    'type': 'circle', 'x': x, 'y': y,
+                    'radius': float(getattr(gf, 'radius', 0.5))})
+            elif shape == 'rectangle':
+                if gf is None:
+                    continue
+                w.add_obstacle({
+                    'type': 'rect', 'x': x, 'y': y,
+                    'half_w': float(getattr(gf, 'half_w', 0.5)),
+                    'half_h': float(getattr(gf, 'half_h', 0.5))})
+            elif shape == 'polygon':
+                # Polygon obstacle: pass vertices to C++ (supports concave via ear-clip)
+                verts = getattr(obj, 'vertices', None)
+                if verts is None or verts.shape[1] < 3:
+                    continue
+                vlist = [{"type": "polygon", "x": 0, "y": 0,
+                          "vertices": [[float(verts[0, i]), float(verts[1, i])]
+                                       for i in range(verts.shape[1])]}]
+                for vd in vlist:
+                    w.add_obstacle(vd)
+            elif shape == 'linestring':
+                # Approximate linestring as thin rect for collision
+                verts = getattr(obj, 'vertices', None)
+                if verts is not None and verts.shape[1] >= 2:
+                    cx = float(np.mean(verts[0, :]))
+                    cy = float(np.mean(verts[1, :]))
+                    half_len = float(np.max(np.abs(verts[0, :] - cx))) * 0.5
+                    w.add_obstacle({
+                        'type': 'rect', 'x': cx, 'y': cy,
+                        'half_w': max(half_len, 0.05),
+                        'half_h': 0.05})
+            elif shape == 'map':
+                # Convert map grid to per-cell rect obstacles (no merging)
+                grid = getattr(obj, 'grid_map', None)
+                if grid is None or grid.size == 0:
+                    continue
+                reso = getattr(obj, 'grid_reso', None)
+                if reso is None or reso.size < 2:
+                    continue
+                rx, ry = float(reso[0, 0]), float(reso[1, 0])
+                if rx <= 0 or ry <= 0:
+                    continue
+                offset = getattr(obj, 'world_offset', [0.0, 0.0])
+                ox, oy = float(offset[0]), float(offset[1])
+                half_w = rx * 0.4
+                half_h = ry * 0.4
+                gw, gh = grid.shape
+                step = max(1, int(0.2 / min(rx, ry)))
+                for gi in range(0, gw, step):
+                    for gj in range(0, gh, step):
+                        if grid[gi, gj] > 50:
+                            cx = ox + (gi + 0.5) * rx
+                            cy = oy + (gj + 0.5) * ry
+                            w.add_obstacle({
+                                'type': 'rect', 'x': cx, 'y': cy,
+                                'half_w': half_w, 'half_h': half_h})
+
+        self._cpp_world = w
+
+    def _c_step_available(self) -> bool:
+        """Check if C++ acceleration can handle the current scene."""
+        if not HAS_C_CORE or self._cpp_world is None:
+            return False
+        # C++ world handles direct-action and simple dash-behavior robots.
+        # Fall back if any robot has special behavior (SFM, RVO, wander)
+        # or the scene has dynamic obstacles.
+        for obj in self.objects:
+            if obj.role == "robot":
+                beh = getattr(obj, 'beh_config', None)
+                if beh is not None:
+                    name = beh.get('name', '')
+                    # dash is fine (applies action directly);
+                    # everything else (sfm, rvo, wander, etc.) needs Python
+                    if name not in ('', 'dash', None):
+                        return False
+            if obj.role == "obstacle" and not obj.static:
+                return False  # dynamic obstacles not in C++ world
+        if self._cpp_world.num_obstacles() == 0 and self._cpp_world.num_robots() == 0:
+            return False
+        return True
+
+    def _cpp_step(self, action: list[Any]) -> bool:
+        """Attempt accelerated step via C++ SimWorld. Returns False if fallback needed."""
+        w = self._cpp_world
+        if w is None or not self._c_step_available():
+            return False
+
+        # Build flat action array; pad each robot to 3 elements for fixed-stride C++ parsing
+        act_list = []
+        for obj in self.objects:
+            if obj.role != "robot":
+                continue
+            # Respect stop_flag (mirrors obj.step() early-return behavior)
+            if getattr(obj, 'stop_flag', False):
+                padded = np.zeros(3, dtype=np.float32)
+                act_list.extend(padded)
+                continue
+            a = action[obj._id] if obj._id < len(action) else None
+            if a is None:
+                a = getattr(obj, '_velocity', np.zeros((2, 1)))
+            a = np.asarray(a).ravel()
+            padded = np.zeros(3, dtype=np.float32)
+            padded[:min(len(a), 3)] = a[:3]
+            act_list.extend(padded)
+
+        if not act_list:
+            return False
+
+        # Step physics & collision via C++
+        try:
+            w.step(np.array(act_list, dtype=np.float32), 3)
+        except Exception:
+            return False
+
+        # Sync C++ results back to Python objects
+        self._sync_cpp_to_python()
+
+        # LiDAR (delegated to each robot's sensor step, which may use C++ in lidar2d.py)
+        self._objects_sensor_step()
+
+        # Status update
+        self._status_step()
+        self._world.step()
+
+        return True
+
+    def _sync_cpp_to_python(self) -> None:
+        """Write C++ simulation results back to Python objects."""
+        w = self._cpp_world
+        if w is None:
+            return
+        py_robots = [obj for obj in self.objects if obj.role == "robot"]
+        for rid in range(min(w.num_robots(), len(py_robots))):
+            py_obj = py_robots[rid]
+            pose = w.get_robot_pose(rid)
+            vel = w.get_robot_velocity(rid)
+            collided = w.get_robot_collision(rid)
+
+            state = py_obj.state
+            # Ensure float dtype before writing (YAML may give int)
+            if state.dtype.kind in ('i', 'u'):
+                state = state.astype(np.float64)
+                py_obj._state = state
+            if state.shape[0] >= 3:
+                state[0, 0] = pose[0]
+                state[1, 0] = pose[1]
+                state[2, 0] = pose[2]
+            vel_py = py_obj.velocity
+            if vel_py.dtype.kind in ('i', 'u'):
+                vel_py = vel_py.astype(np.float64)
+                py_obj._velocity = vel_py
+            if vel_py.shape[0] >= 2:
+                vel_py[0, 0] = vel[0]
+                vel_py[1, 0] = vel[1] if vel[1] is not None else 0.0
+
+            py_obj.collision_flag = collided
+            py_obj._invalidate_reactive_cache()
+
     @normalize_actions
     def step(
         self,
@@ -315,6 +540,11 @@ class EnvBase:
         action = self._assign_keyboard_action(action)
         action = self._assign_group_action(action)
 
+        # Try C++ accelerated path
+        if self._cpp_step(action):
+            return
+
+        # Fallback to original Python path
         self._objects_step(action, sensor_step=False)
         self._objects_sensor_step()
         self._world.step()
@@ -758,6 +988,7 @@ class EnvBase:
 
         if random:
             self._rebuild_from_cached_parse()
+            self._build_cpp_world()
             return
 
         self._reset_all()
@@ -1280,7 +1511,7 @@ class EnvBase:
         try:
             importlib.import_module(behaviors)
         except ImportError as e:
-            self.logger.error(f"Failed to load module '{behaviors}': {e}")
+            print(f"Failed to load module '{behaviors}': {e}")
             return
 
         # Reinitialize individual behaviors for all objects

@@ -1,16 +1,18 @@
 [build-system]
 requires = ["setuptools>=61.0",
+            "pybind11>=2.9.0",
+            "wheel",
             ]
 
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ir-sim"
+name = "ir-simX"
 version = "2.10.0"
 authors = [
   { name="Han Ruihua", email="hanrh@connect.hku.hk" },
 ]
-description = "IR-SIM is an open-source, lightweight robot simulator based on Python, designed for robotics navigation, control, and learning. This simulator provides a simple and user-friendly framework for simulating robots, sensors, and environments, facilitating the development and testing of robotics algorithms with minimal hardware requirements."
+description = "IR-SIM with C++ accelerated LiDAR, collision detection, and kinematics (~1000x faster)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -140,7 +142,7 @@ exclude_dirs = ["tests", "docs", ".venv"]
 skips = ["B101", "B311", "B110"]
 
 [project.urls]
-"Homepage" = "https://ir-sim.readthedocs.io/en/stable/"
-"Documentation" = "https://ir-sim.readthedocs.io/en/stable/"
-"Repository" = "https://github.com/hanruihua/ir-sim"
-"Issues" = "https://github.com/hanruihua/ir-sim/issues"
+"Homepage" = "https://github.com/{username}/ir-simX"
+"Documentation" = "https://github.com/{username}/ir-simX"
+"Repository" = "https://github.com/{username}/ir-simX"
+"Issues" = "https://github.com/{username}/ir-simX/issues"

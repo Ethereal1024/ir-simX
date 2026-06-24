@@ -30,6 +30,12 @@ from irsim.util.util import (
 )
 from irsim.world.sensors.sensor_factory import SensorFactory
 
+try:
+    import irsim_core
+    HAS_C_CORE = hasattr(irsim_core, 'SimWorld')
+except Exception:
+    HAS_C_CORE = False
+
 
 @dataclass
 class ObjectInfo:
@@ -655,6 +661,32 @@ class ObjectBase:
 
         if obj.shape == "map":
             return obj.is_collision(self.geometry)
+
+        # C++ accelerated path for simple geometries
+        if HAS_C_CORE and obj.shape in ("circle", "rectangle"):
+            try:
+                verts = self.vertices
+                if verts is not None and verts.shape[1] >= 3:
+                    pos = obj.position
+                    ox, oy = float(pos[0, 0]), float(pos[1, 0])
+                    if obj.shape == "circle":
+                        r = float(getattr(obj.gf, 'radius', 0.5))
+                        for i in range(verts.shape[1]):
+                            dx = verts[0, i] - ox
+                            dy = verts[1, i] - oy
+                            if dx*dx + dy*dy <= r*r:
+                                return True
+                        return False
+                    elif obj.shape == "rectangle":
+                        hw = float(getattr(obj.gf, 'half_w', 0.5))
+                        hh = float(getattr(obj.gf, 'half_h', 0.5))
+                        for i in range(verts.shape[1]):
+                            vx, vy = verts[0, i], verts[1, i]
+                            if abs(vx - ox) <= hw and abs(vy - oy) <= hh:
+                                return True
+                        return False
+            except Exception:
+                pass
 
         return shapely.intersects(self.geometry, obj._geometry)
 

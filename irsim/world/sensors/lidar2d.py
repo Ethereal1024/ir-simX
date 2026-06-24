@@ -17,6 +17,13 @@ from irsim.util.util import (
     transform_point_with_state,
 )
 
+# Try to import C++ accelerated backend
+try:
+    from irsim_core import lidar_raycast as _c_lidar_raycast
+    HAS_C_CORE = True
+except ImportError:
+    HAS_C_CORE = False
+
 if TYPE_CHECKING:
     from irsim.world.object_base import ObjectBase
 
@@ -204,6 +211,151 @@ class Lidar2D:
         self._geometry = geometry_transform(self._original_geometry, state)
         self._init_geometry = self._geometry
 
+    def _c_step(self, state) -> bool:
+        """Try C++ accelerated LiDAR step. Returns True on success."""
+        if not HAS_C_CORE:
+            return False
+
+        ep = self._env_param
+        objects = ep.objects if ep is not None else []
+
+        # Build obstacle dict list, excluding self and unobstructed
+        obs_dicts = []
+        has_map_obs = False
+        has_non_convex = False  # non-convex polygons fall back to Shapely
+        parent_state = self.parent.state if self.parent is not None else state
+        heading = float(parent_state[2, 0]) if parent_state.shape[0] >= 3 else 0.0
+
+        for obj in objects:
+            if obj._id == self.obj_id or not obj._geometry_valid or obj.unobstructed:
+                continue
+            shape = getattr(obj, 'shape', None)
+            if shape == "map":
+                rects = self._map_to_c_dicts(obj, downsample_m=0.5)
+                obs_dicts.extend(rects)
+                if rects:
+                    has_map_obs = True
+                continue
+            if shape == "polygon":
+                # Check convexity — only convex polygons can use C++ raycast
+                verts = getattr(obj, 'vertices', None)
+                is_convex = True
+                if verts is not None and verts.shape[1] >= 3:
+                    n = verts.shape[1]
+                    sign = 0
+                    for i in range(n):
+                        x1, y1 = verts[0, i], verts[1, i]
+                        x2, y2 = verts[0, (i+1)%n], verts[1, (i+1)%n]
+                        x3, y3 = verts[0, (i+2)%n], verts[1, (i+2)%n]
+                        cross = (x2-x1)*(y3-y2) - (y2-y1)*(x3-x2)
+                        if cross != 0:
+                            if sign == 0:
+                                sign = 1 if cross > 0 else -1
+                            elif (cross > 0 and sign < 0) or (cross < 0 and sign > 0):
+                                is_convex = False
+                                break
+                if not is_convex:
+                    has_non_convex = True
+                    continue
+                d = self._obj_to_c_dict(obj)
+                if d:
+                    obs_dicts.append(d)
+                continue
+            d = self._obj_to_c_dict(obj)
+            if d:
+                obs_dicts.append(d)
+
+        if has_non_convex:
+            return False  # non-convex polygons fall back to Shapely
+
+        if not obs_dicts:
+            self.range_data[:] = self.range_max
+            return True
+
+        origin = self.lidar_origin
+        ox = float(origin[0, 0]) if origin.shape[0] >= 1 else 0.0
+        oy = float(origin[1, 0]) if origin.shape[1] >= 1 else 0.0
+
+        try:
+            result = _c_lidar_raycast(
+                ox, oy, heading,
+                self.angle_list.astype(np.float32),
+                float(self.range_max),
+                obs_dicts,
+            )
+            if result is not None and len(result) == self.number:
+                self.range_data[:] = result
+                return True
+        except Exception:
+            pass
+        return False
+
+    @staticmethod
+    def _obj_to_c_dict(obj) -> dict | None:
+        """Convert a world object to a C++ obstacle dict."""
+        shape = getattr(obj, 'shape', None)
+        pos = getattr(obj, 'position', None)
+        if shape is None or pos is None or pos.size < 2:
+            return None
+        gf = getattr(obj, 'gf', None)
+
+        if shape == "circle":
+            return {"type": "circle", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                    "radius": float(getattr(gf, 'radius', 0.5))}
+        elif shape == "rectangle":
+            return {"type": "rect", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                    "half_w": float(getattr(gf, 'half_w', 0.5)),
+                    "half_h": float(getattr(gf, 'half_h', 0.5))}
+        elif shape == "polygon":
+            verts = getattr(obj, 'vertices', None)
+            if verts is None or verts.shape[1] < 3:
+                return None
+            return {"type": "polygon", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                    "vertices": [[float(verts[0, i]), float(verts[1, i])]
+                                 for i in range(verts.shape[1])]}
+        elif shape == "linestring":
+            # Approximate as thin rect
+            verts = getattr(obj, 'vertices', None)
+            if verts is not None and verts.shape[1] >= 2:
+                cx = float(np.mean(verts[0, :]))
+                cy = float(np.mean(verts[1, :]))
+                return {"type": "rect", "x": cx, "y": cy,
+                        "half_w": 0.05, "half_h": 0.05}
+        return None
+
+    @staticmethod
+    def _map_to_c_dicts(obj, downsample_m: float = 0.5) -> list[dict]:
+        """Convert a map obstacle's grid to a list of C++ rect dicts.
+
+        Each occupied grid cell becomes a small rect at its exact position.
+        No downsampling merging to avoid obstacle expansion (ghost walls).
+        """
+        grid = getattr(obj, 'grid_map', None)
+        if grid is None or grid.size == 0:
+            return []
+        reso = getattr(obj, 'grid_reso', None)
+        if reso is None or reso.size < 2:
+            return []
+        rx, ry = float(reso[0, 0]), float(reso[1, 0])
+        if rx <= 0 or ry <= 0:
+            return []
+        offset = getattr(obj, 'world_offset', [0.0, 0.0])
+        ox, oy = float(offset[0]), float(offset[1])
+        half_w = rx * 0.4
+        half_h = ry * 0.4
+        occ = []
+        gw, gh = grid.shape
+        # Only sample every few cells to keep count manageable
+        step = max(1, int(0.2 / min(rx, ry)))
+        for gi in range(0, gw, step):
+            for gj in range(0, gh, step):
+                if grid[gi, gj] > 50:
+                    cx = ox + (gi + 0.5) * rx
+                    cy = oy + (gj + 0.5) * ry
+                    occ.append({"type": "rect", "x": cx, "y": cy,
+                                "half_w": half_w, "half_h": half_h})
+        return occ
+
     def step(self, state):
         """
         Update the Lidar's state and process intersections with environment objects.
@@ -212,8 +364,13 @@ class Lidar2D:
             state (np.ndarray): New state of the sensor.
         """
         self._state = state
-
         self.lidar_origin = transform_point_with_state(self.offset, self._state)
+
+        # Try C++ accelerated path first
+        if self._c_step(state):
+            return
+
+        # Fallback to original Shapely path
         new_geometry = geometry_transform(self._original_geometry, self._state)
         prepare(new_geometry)
 
