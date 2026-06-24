@@ -416,6 +416,11 @@ class EnvBase:
         if w is None or not self._c_step_available():
             return False
 
+        # Run Python pre-processing for all robots (wander goal renewal, etc.)
+        for obj in self.objects:
+            if obj.role == "robot":
+                obj.pre_process()
+
         # Build flat action array; pad each robot to 3 elements for fixed-stride C++ parsing
         act_list = []
         for obj in self.objects:
@@ -488,6 +493,11 @@ class EnvBase:
                 vel_py[1, 0] = vel[1] if vel[1] is not None else 0.0
 
             py_obj.collision_flag = collided
+
+            # mid_process: wrap angle, pad/trim to state_dim (mirrors obj.step())
+            processed = py_obj.mid_process(py_obj.state.copy())
+            if processed is not None:
+                py_obj._state = processed
 
             # Record trajectory (mirrors obj.step() appending state)
             if hasattr(py_obj, 'trajectory') and isinstance(py_obj.trajectory, list):
