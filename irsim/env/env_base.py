@@ -18,6 +18,7 @@ from typing import Any
 import matplotlib
 import numpy as np
 from matplotlib import pyplot as plt
+import shapely
 from shapely import Polygon
 from shapely.strtree import STRtree
 
@@ -427,7 +428,10 @@ class EnvBase:
                 continue
             a = action[obj._id] if obj._id < len(action) else None
             if a is None:
-                a = getattr(obj, '_velocity', np.zeros((2, 1)))
+                # Generate velocity from behavior (dash, rvo, etc.)
+                a = obj.gen_behavior_vel(None)
+                if a is None or np.all(a == 0):
+                    a = getattr(obj, '_velocity', np.zeros((2, 1)))
             a = np.asarray(a).ravel()
             padded = np.zeros(3, dtype=np.float32)
             padded[:min(len(a), 3)] = a[:3]
@@ -484,6 +488,10 @@ class EnvBase:
                 vel_py[1, 0] = vel[1] if vel[1] is not None else 0.0
 
             py_obj.collision_flag = collided
+            # Update geometry for rendering and collision (mirrors obj.step())
+            if py_obj.gf is not None:
+                py_obj._geometry = py_obj.gf.step(py_obj.state)
+                py_obj._geometry_valid = True
             py_obj._invalidate_reactive_cache()
 
     @normalize_actions
