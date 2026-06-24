@@ -36,7 +36,7 @@ def run(verts_list, colors, title):
     ax.set_xlim(-2,6); ax.set_ylim(-3,3); ax.set_title(f'{title} — {hits.sum()}/{len(ranges)} hits')
     plt.tight_layout(); plt.show(block=True); input()
 
-set_seed(42)
+# set_seed(42)
 
 # ── 1. IR-SIM random concave polygon (high spikeyness) ──
 verts = clean(random_generate_polygon(number=1, center_range=[2,0,3,0],

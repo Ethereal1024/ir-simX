@@ -327,10 +327,17 @@ class EnvBase:
             elif shape == 'rectangle':
                 if gf is None:
                     continue
-                w.add_obstacle({
-                    'type': 'rect', 'x': x, 'y': y,
-                    'half_w': float(getattr(gf, 'half_w', 0.5)),
-                    'half_h': float(getattr(gf, 'half_h', 0.5))})
+                verts = getattr(gf, 'vertices', None)
+                if verts is not None and verts.shape[1] == 4:
+                    w.add_obstacle({
+                        'type': 'polygon', 'x': 0, 'y': 0,
+                        'vertices': [[float(verts[0, i]), float(verts[1, i])]
+                                     for i in range(verts.shape[1])]})
+                else:
+                    w.add_obstacle({
+                        'type': 'rect', 'x': x, 'y': y,
+                        'half_w': float(getattr(gf, 'half_w', 0.5)),
+                        'half_h': float(getattr(gf, 'half_h', 0.5))})
             elif shape == 'polygon':
                 # Polygon obstacle: pass vertices to C++ (supports concave via ear-clip)
                 verts = getattr(obj, 'vertices', None)
