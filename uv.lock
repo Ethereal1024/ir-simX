@@ -684,6 +684,26 @@ wheels = [
 [[package]]
 name = "ir-sim"
 version = "2.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "imageio" },
+    { name = "loguru" },
+    { name = "matplotlib" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pyyaml" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "shapely" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/48/e6/b1ee1bb69730144a48fc016488c56da5ef3fe15ba51087ca8c9abd5ce521/ir_sim-2.10.0.tar.gz", hash = "sha256:0009eafb9c07ee3d3bc87063ed9cac54a0fc58cd0f51c271ef395271153cae6b", size = 783769, upload-time = "2026-05-24T12:40:21.145Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/0c/0eed22821c66f1158fdbc5abc625711ff54023e45c151f6dc90ac2e026ec/ir_sim-2.10.0-py3-none-any.whl", hash = "sha256:17d40b5b5193d17543cdbc04470725b157735086747039bc805c6c5832d29e35", size = 732938, upload-time = "2026-05-24T12:40:18.781Z" },
+]
+
+[[package]]
+name = "ir-simx"
+version = "2.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "imageio" },
@@ -712,6 +732,7 @@ dev = [
     { name = "bandit", extra = ["toml"] },
     { name = "black" },
     { name = "pre-commit" },
+    { name = "pybind11" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -742,6 +763,7 @@ lint = [
     { name = "ty" },
 ]
 test = [
+    { name = "pybind11" },
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
@@ -767,6 +789,7 @@ dev = [
     { name = "bandit", extras = ["toml"], specifier = ">=1.8.0" },
     { name = "black", specifier = ">=25.1.0" },
     { name = "pre-commit", specifier = "==4.6.0" },
+    { name = "pybind11", specifier = ">=2.9.0" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
     { name = "ruff", specifier = ">=0.12.8" },
@@ -795,6 +818,7 @@ lint = [
     { name = "ty", specifier = ">=0.0.1a17" },
 ]
 test = [
+    { name = "pybind11", specifier = ">=2.9.0" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
 ]
@@ -1426,6 +1450,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/a2/709e0fe2f093556c17fbafda93ac032257242cabcc7ff3369e2cb76a97aa/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a5f098451abc2828f7dc6b58d44b532b22f2088f4999a937557b603ce72b1993", size = 279544, upload-time = "2025-02-13T21:54:24.68Z" },
     { url = "https://files.pythonhosted.org/packages/50/e6/eecf58810b9d12e6427369784efe814a1eec0f492084ce8eb8f4d89d6d61/psutil-7.0.0-cp37-abi3-win32.whl", hash = "sha256:ba3fcef7523064a6c9da440fc4d6bd07da93ac726b5733c29027d7dc95b39d99", size = 241053, upload-time = "2025-02-13T21:54:34.31Z" },
     { url = "https://files.pythonhosted.org/packages/50/1b/6921afe68c74868b4c9fa424dad3be35b095e16687989ebbb50ce4fceb7c/psutil-7.0.0-cp37-abi3-win_amd64.whl", hash = "sha256:4cf3d4eb1aa9b348dec30105c55cd9b7d4629285735a102beb4441e38db90553", size = 244885, upload-time = "2025-02-13T21:54:37.486Z" },
+]
+
+[[package]]
+name = "pybind11"
+version = "3.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/f0/35145a3c3baffeef55d4b8324caa33abaa8fa56ab345ecd4b2211d09163e/pybind11-3.0.4.tar.gz", hash = "sha256:3286b59c8a774b9ee650169302dd5a4eedc30a8617905a0560dd8ee44775130c", size = 589533, upload-time = "2026-04-19T03:08:15.925Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/06/c3a23c9a0263b136c519f033a58d4641e73065fefc7754e9667ec206d992/pybind11-3.0.4-py3-none-any.whl", hash = "sha256:961720ee652da51d531b7b2451a6bd2bc042b0106e6d9baa48ecb7d58034ce63", size = 314166, upload-time = "2026-04-19T03:08:14.091Z" },
 ]
 
 [[package]]

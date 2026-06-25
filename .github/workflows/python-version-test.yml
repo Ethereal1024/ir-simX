@@ -32,8 +32,13 @@ jobs:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
 
-    - name: Install the project
+    - name: Install Python dependencies
       run: uv sync --locked --all-extras --dev
+
+    - name: Build C++ extension
+      run: |
+        uv run pip install pybind11
+        uv run pip install -e . --no-deps
 
     - name: Test with pytest (Ubuntu)
       if: startsWith(matrix.os, 'ubuntu')
