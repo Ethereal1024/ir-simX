@@ -46,6 +46,8 @@ static Obstacle py_to_obstacle(const py::dict& d,
         obs.type = ShapeType::LINESTRING;
         auto vlist = d["vertices"].cast<py::list>();
         obs.n_verts = (int)vlist.size();
+        if (d.contains("thickness"))
+            obs.linestring_half_thickness = d["thickness"].cast<float>() * 0.5f;
         if (verts_storage && obs.n_verts >= 2) {
             verts_storage->clear();
             verts_storage->reserve(obs.n_verts);
@@ -88,9 +90,9 @@ PYBIND11_MODULE(_core, m) {
                               py::array_t<float> vel_max = py::array_t<float>(),
                               py::array_t<float> vel_acc = py::array_t<float>(),
                               float wheelbase = 0.5f) -> int {
-            float vmin[3] = {-1.0f, -1.0f, -1.0f};
-            float vmax[3] = { 1.0f,  1.0f,  1.0f};
-            float vacc[3] = { 1.0f,  1.0f,  1.0f};
+            float vmin[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+            float vmax[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+            float vacc[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
             if (vel_min.size() > 0) { auto b = vel_min.request();
                 for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
                     vmin[i] = static_cast<const float*>(b.ptr)[i]; }
@@ -195,9 +197,9 @@ PYBIND11_MODULE(_core, m) {
                                          py::array_t<float> vel_min = py::array_t<float>(),
                                          py::array_t<float> vel_max = py::array_t<float>(),
                                          py::array_t<float> vel_acc = py::array_t<float>()) -> int {
-            float vmin[3] = {-1.0f, -1.0f, -1.0f};
-            float vmax[3] = { 1.0f,  1.0f,  1.0f};
-            float vacc[3] = { 1.0f,  1.0f,  1.0f};
+            float vmin[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+            float vmax[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+            float vacc[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
             if (vel_min.size() > 0) { auto b = vel_min.request();
                 for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
                     vmin[i] = static_cast<const float*>(b.ptr)[i]; }
@@ -219,9 +221,9 @@ PYBIND11_MODULE(_core, m) {
                                                py::array_t<float> vel_min = py::array_t<float>(),
                                                py::array_t<float> vel_max = py::array_t<float>(),
                                                py::array_t<float> vel_acc = py::array_t<float>()) -> int {
-            float vmin[3] = {-1.0f, -1.0f, -1.0f};
-            float vmax[3] = { 1.0f,  1.0f,  1.0f};
-            float vacc[3] = { 1.0f,  1.0f,  1.0f};
+            float vmin[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+            float vmax[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+            float vacc[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
             if (vel_min.size() > 0) { auto b = vel_min.request();
                 for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
                     vmin[i] = static_cast<const float*>(b.ptr)[i]; }
@@ -248,9 +250,9 @@ PYBIND11_MODULE(_core, m) {
                 auto pt = item.cast<py::list>();
                 verts.push_back({pt[0].cast<float>(), pt[1].cast<float>()});
             }
-            float vmin[3] = {-1.0f, -1.0f, -1.0f};
-            float vmax[3] = { 1.0f,  1.0f,  1.0f};
-            float vacc[3] = { 1.0f,  1.0f,  1.0f};
+            float vmin[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+            float vmax[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+            float vacc[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
             if (vel_min.size() > 0) { auto b = vel_min.request();
                 for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
                     vmin[i] = static_cast<const float*>(b.ptr)[i]; }
@@ -277,9 +279,9 @@ PYBIND11_MODULE(_core, m) {
                 auto pt = item.cast<py::list>();
                 verts.push_back({pt[0].cast<float>(), pt[1].cast<float>()});
             }
-            float vmin[3] = {-1.0f, -1.0f, -1.0f};
-            float vmax[3] = { 1.0f,  1.0f,  1.0f};
-            float vacc[3] = { 1.0f,  1.0f,  1.0f};
+            float vmin[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+            float vmax[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+            float vacc[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
             if (vel_min.size() > 0) { auto b = vel_min.request();
                 for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
                     vmin[i] = static_cast<const float*>(b.ptr)[i]; }
@@ -411,5 +413,15 @@ PYBIND11_MODULE(_core, m) {
                            float vx, float vy, float dt) -> py::tuple {
         step_omni(x, y, theta, vx, vy, dt);
         return py::make_tuple(x, y, theta);
+    });
+    m.def("step_omni_angular", [](float x, float y, float theta,
+                                   float vx, float vy, float omega, float dt) -> py::tuple {
+        step_omni_angular(x, y, theta, vx, vy, omega, dt);
+        return py::make_tuple(x, y, theta);
+    });
+    m.def("step_acker", [](float x, float y, float theta, float steer_angle,
+                            float v, float desired_steer, float dt, float wheelbase) -> py::tuple {
+        step_acker(x, y, theta, steer_angle, v, desired_steer, dt, wheelbase);
+        return py::make_tuple(x, y, theta, steer_angle);
     });
 }

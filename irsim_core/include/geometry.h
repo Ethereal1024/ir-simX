@@ -70,6 +70,7 @@ struct Obstacle {
     const Vec2* verts = nullptr;
     int n_verts = 0;
     float vx = 0, vy = 0;   // velocity for FMCW radial velocity computation
+    float linestring_half_thickness = 0.05f;  // configurable per-obstacle (default 0.05)
     AABB aabb;
 
     void compute_aabb() {
@@ -77,7 +78,19 @@ struct Obstacle {
         if (type == ShapeType::CIRCLE) {
             aabb = AABB{center - Vec2{radius, radius}, center + Vec2{radius, radius}};
         } else if (type == ShapeType::RECT) {
-            aabb = AABB{center - Vec2{half_w, half_h}, center + Vec2{half_w, half_h}};
+            if (std::abs(theta) < 1e-6f) {
+                aabb = AABB{center - Vec2{half_w, half_h}, center + Vec2{half_w, half_h}};
+            } else {
+                float c = std::cos(theta), s = std::sin(theta);
+                Vec2 corners[4] = {
+                    center + Vec2{ half_w * c - half_h * s,  half_w * s + half_h * c},
+                    center + Vec2{-half_w * c - half_h * s, -half_w * s + half_h * c},
+                    center + Vec2{ half_w * c + half_h * s,  half_w * s - half_h * c},
+                    center + Vec2{-half_w * c + half_h * s, -half_w * s - half_h * c}
+                };
+                aabb = AABB();
+                for (auto& p : corners) aabb.expand(p);
+            }
         } else if (type == ShapeType::POLYGON && verts) {
             for (int i = 0; i < n_verts; i++) aabb.expand(verts[i]);
         } else if (type == ShapeType::LINESTRING && verts) {
@@ -313,7 +326,7 @@ inline bool intersect_ray_rect(Vec2 o, Vec2 d, Vec2 c, float hw, float hh, float
 }
 
 // Point-in-convex-polygon test.
-inline bool point_in_polygon(Vec2 p, const Vec2* verts, int n) {
+inline bool point_in_convex_polygon(Vec2 p, const Vec2* verts, int n) {
     for (int i = 0; i < n; i++) {
         const Vec2& a = verts[i];
         const Vec2& b = verts[(i + 1) % n];

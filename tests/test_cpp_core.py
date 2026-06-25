@@ -138,8 +138,7 @@ class TestSimWorldDynamicObstacles:
         obs_actions = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         w.step_dynamic_obstacles(obs_actions, 3)
         px, _py, pt = w.get_obstacle_pose(0)
-        # With accel lim=1, dt=0.1: clipped v = 0.1, dx = 0.1*0.1 = 0.01
-        assert px == pytest.approx(0.01, abs=0.001)
+        assert px == pytest.approx(0.1, abs=0.001)
         assert pt == pytest.approx(0.0, abs=0.001)
 
     def test_step_dynamic_omni_moves(self):
@@ -152,7 +151,7 @@ class TestSimWorldDynamicObstacles:
         obs_actions = np.array([0.0, 1.0, 0.0], dtype=np.float32)
         w.step_dynamic_obstacles(obs_actions, 3)
         _px, py, _pt = w.get_obstacle_pose(0)
-        assert py == pytest.approx(0.01, abs=0.001)
+        assert py == pytest.approx(0.1, abs=0.001)
 
     def test_dynamic_obstacle_collision_geometry_updates(self):
         w = _cc.SimWorld()
@@ -234,7 +233,7 @@ class TestSimWorldDynamicObstacles:
         obs_actions = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         w.step_dynamic_obstacles(obs_actions, 3)
         px, _, _ = w.get_obstacle_pose(0)
-        assert px == pytest.approx(0.01, abs=0.001)
+        assert px == pytest.approx(0.1, abs=0.001)
 
     def test_dynamic_rect_collision_detected(self):
         w = _cc.SimWorld()
@@ -295,8 +294,8 @@ class TestSimWorldDynamicObstacles:
 
 
 class TestSimWorldStep:
-    # Default limits: vel_acc=[1,1,1], vel_max=[1,1,1], vel_min=[-1,-1,-1]
-    # With dt=0.1, accel clips action to ±0.1 per step
+    # Default limits: no arrays passed → FLT_MAX (no clipping).
+    # With dt=0.1, velocity 1.0 → dx = 0.1
 
     def test_diff_moves_forward(self):
         w = _cc.SimWorld()
@@ -305,7 +304,7 @@ class TestSimWorldStep:
         actions = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         w.step(actions, 3)
         px, py, pt = w.get_robot_pose(0)
-        assert px == pytest.approx(0.01, abs=0.001)
+        assert px == pytest.approx(0.1, abs=0.001)
         assert py == pytest.approx(0.0, abs=0.001)
         assert pt == pytest.approx(0.0, abs=0.001)
 
@@ -317,7 +316,7 @@ class TestSimWorldStep:
         actions = np.array([0.0, 1.0, 0.0], dtype=np.float32)
         w.step(actions, 3)
         _, _, pt = w.get_robot_pose(0)
-        assert pt == pytest.approx(0.01, abs=0.001)
+        assert pt == pytest.approx(0.1, abs=0.001)
 
     def test_diff_negative_velocity(self):
         w = _cc.SimWorld()
@@ -326,7 +325,7 @@ class TestSimWorldStep:
         actions = np.array([-1.0, 0.0, 0.0], dtype=np.float32)
         w.step(actions, 3)
         px, _, _ = w.get_robot_pose(0)
-        assert px == pytest.approx(4.99, abs=0.001)
+        assert px == pytest.approx(4.9, abs=0.001)
 
     def test_multiple_robots(self):
         w = _cc.SimWorld()
@@ -337,8 +336,8 @@ class TestSimWorldStep:
         w.step(actions, 3)
         px0, _, _ = w.get_robot_pose(0)
         px1, _, _ = w.get_robot_pose(1)
-        assert px0 == pytest.approx(0.01, abs=0.001)
-        assert px1 == pytest.approx(1.01, abs=0.001)
+        assert px0 == pytest.approx(0.1, abs=0.001)
+        assert px1 == pytest.approx(1.1, abs=0.001)
 
     def test_acceleration_clipping(self):
         w = _cc.SimWorld()

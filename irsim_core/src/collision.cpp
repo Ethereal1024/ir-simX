@@ -15,21 +15,9 @@ static void project_polygon(const Vec2* verts, int n, Vec2 axis, float& min, flo
     }
 }
 
-// ── Helper: get edge normals for a polygon ────────────────────
-// Returns the normal (perpendicular) for each edge.
-static void get_edge_normals(const Vec2* verts, int n, Vec2* normals_out) {
-    for (int i = 0; i < n; i++) {
-        const Vec2& a = verts[i];
-        const Vec2& b = verts[(i + 1) % n];
-        Vec2 edge = b - a;
-        // Outward normal: right-hand perpendicular
-        normals_out[i] = {edge.y, -edge.x};
-        float len = normals_out[i].len();
-        if (len > 1e-8f) normals_out[i] = normals_out[i] / len;
-    }
-}
-
 bool sat_intersect(const Vec2* verts_a, int n_a, const Vec2* verts_b, int n_b) {
+    if (n_a > 256 || n_b > 256) return false;
+
     // Collect all potential separating axes (edge normals from both polygons)
     int max_axes = n_a + n_b;
     Vec2* axes = (Vec2*)alloca(max_axes * sizeof(Vec2));
@@ -144,7 +132,7 @@ bool check_robot_obstacle_collision(
             for (int i = 0; i < obs.n_verts - 1; i++) {
                 Vec2 a = obs.verts[i], b = obs.verts[i + 1];
                 Vec2 dir = (b - a).normalized();
-                constexpr float half_thick = 0.05f;  // default linestring half-thickness
+                float half_thick = obs.linestring_half_thickness;
                 Vec2 perp{ -dir.y * half_thick, dir.x * half_thick};
                 Vec2 seg_quad[4] = {
                     {a.x - perp.x, a.y - perp.y},
@@ -175,18 +163,45 @@ bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b) {
     };
 
     auto check_circle_rect = [](const Obstacle& circle, const Obstacle& rect) -> bool {
-        float cx = circle.center.x, cy = circle.center.y;
-        float rx = rect.center.x, ry = rect.center.y;
+        Vec2 q[4];
+        float c = std::cos(rect.theta), s = std::sin(rect.theta);
         float hw = rect.half_w, hh = rect.half_h;
-        float closest_x = std::max(rx - hw, std::min(cx, rx + hw));
-        float closest_y = std::max(ry - hh, std::min(cy, ry + hh));
-        float dx = cx - closest_x, dy = cy - closest_y;
-        return dx * dx + dy * dy <= circle.radius * circle.radius;
+        q[0] = rect.center + Vec2{ hw * c - hh * s,  hw * s + hh * c};
+        q[1] = rect.center + Vec2{-hw * c - hh * s, -hw * s + hh * c};
+        q[2] = rect.center + Vec2{-hw * c + hh * s, -hw * s - hh * c};
+        q[3] = rect.center + Vec2{ hw * c + hh * s,  hw * s - hh * c};
+        float min_d2 = FLT_MAX;
+        for (int i = 0; i < 4; i++) {
+            Vec2 a = q[i], b = q[(i + 1) % 4];
+            Vec2 ab = b - a;
+            float t = (circle.center - a).dot(ab) / ab.len2();
+            t = std::max(0.0f, std::min(1.0f, t));
+            Vec2 closest = a + ab * t;
+            float d2 = (closest - circle.center).len2();
+            if (d2 < min_d2) min_d2 = d2;
+        }
+        return min_d2 <= circle.radius * circle.radius;
     };
 
     auto check_rect_rect = [](const Obstacle& ra, const Obstacle& rb) -> bool {
-        return std::abs(ra.center.x - rb.center.x) <= ra.half_w + rb.half_w &&
-               std::abs(ra.center.y - rb.center.y) <= ra.half_h + rb.half_h;
+        Vec2 qa[4], qb[4];
+        {
+            float c = std::cos(ra.theta), s = std::sin(ra.theta);
+            float hw = ra.half_w, hh = ra.half_h;
+            qa[0] = ra.center + Vec2{ hw * c - hh * s,  hw * s + hh * c};
+            qa[1] = ra.center + Vec2{-hw * c - hh * s, -hw * s + hh * c};
+            qa[2] = ra.center + Vec2{-hw * c + hh * s, -hw * s - hh * c};
+            qa[3] = ra.center + Vec2{ hw * c + hh * s,  hw * s - hh * c};
+        }
+        {
+            float c = std::cos(rb.theta), s = std::sin(rb.theta);
+            float hw = rb.half_w, hh = rb.half_h;
+            qb[0] = rb.center + Vec2{ hw * c - hh * s,  hw * s + hh * c};
+            qb[1] = rb.center + Vec2{-hw * c - hh * s, -hw * s + hh * c};
+            qb[2] = rb.center + Vec2{-hw * c + hh * s, -hw * s - hh * c};
+            qb[3] = rb.center + Vec2{ hw * c + hh * s,  hw * s - hh * c};
+        }
+        return sat_intersect(qa, 4, qb, 4);
     };
 
     auto obs_to_quad = [](const Obstacle& obs, Vec2* quad) {
@@ -197,10 +212,12 @@ bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b) {
             quad[2] = {obs.center.x + r, obs.center.y + r};
             quad[3] = {obs.center.x - r, obs.center.y + r};
         } else if (obs.type == ShapeType::RECT) {
-            quad[0] = {obs.center.x - obs.half_w, obs.center.y - obs.half_h};
-            quad[1] = {obs.center.x + obs.half_w, obs.center.y - obs.half_h};
-            quad[2] = {obs.center.x + obs.half_w, obs.center.y + obs.half_h};
-            quad[3] = {obs.center.x - obs.half_w, obs.center.y + obs.half_h};
+            float c = std::cos(obs.theta), s = std::sin(obs.theta);
+            float hw = obs.half_w, hh = obs.half_h;
+            quad[0] = obs.center + Vec2{ hw * c - hh * s,  hw * s + hh * c};
+            quad[1] = obs.center + Vec2{-hw * c - hh * s, -hw * s + hh * c};
+            quad[2] = obs.center + Vec2{-hw * c + hh * s, -hw * s - hh * c};
+            quad[3] = obs.center + Vec2{ hw * c + hh * s,  hw * s - hh * c};
         } else if (obs.type == ShapeType::POLYGON && obs.verts) {
             // Use actual polygon vertices
             for (int i = 0; i < std::min(obs.n_verts, 64); i++)
@@ -208,10 +225,16 @@ bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b) {
         }
     };
 
-    // Handle pairs that need SAT (polygon or linestring involved)
-    auto needs_sat = [](ShapeType t) { return t == ShapeType::POLYGON || t == ShapeType::LINESTRING; };
+    // Handle pairs that need SAT (polygon, linestring, or rotated rect involved)
+    auto needs_sat = [](const Obstacle& a, const Obstacle& b) -> bool {
+        auto check_one = [](ShapeType t, float theta) {
+            return t == ShapeType::POLYGON || t == ShapeType::LINESTRING ||
+                   (t == ShapeType::RECT && std::abs(theta) > 1e-6f);
+        };
+        return check_one(a.type, a.theta) || check_one(b.type, b.theta);
+    };
 
-    if (needs_sat(a.type) || needs_sat(b.type)) {
+    if (needs_sat(a, b)) {
         // Build flat convex-shape lists from each obstacle.
         // Convex polygons → single entry; concave → triangulated.
         // Circle/rect → 4-point quad.
@@ -238,7 +261,7 @@ bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b) {
             }
             if (o.type == ShapeType::LINESTRING && o.verts && o.n_verts >= 2) {
                 int cnt = 0;
-                constexpr float half_thick = 0.05f;
+                float half_thick = o.linestring_half_thickness;
                 for (int i = 0; i < o.n_verts - 1 && cnt < 64; i++) {
                     Vec2 a = o.verts[i], b = o.verts[i + 1];
                     Vec2 dir = (b - a).normalized();

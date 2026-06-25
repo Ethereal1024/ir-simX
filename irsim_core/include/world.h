@@ -7,6 +7,7 @@
 #include <vector>
 #include <deque>
 #include <cstring>
+#include <cstdint>
 
 // ═══════════════════════════════════════════════════════════════
 //  Robot state
@@ -55,6 +56,8 @@ struct DynamicObstacle {
     // For polygon: vertices stored persistently
     std::vector<Vec2> local_vertices;     // vertices relative to initial center
     float init_center_x = 0, init_center_y = 0;  // initial absolute center
+    size_t poly_verts_index = SIZE_MAX;   // index into SimWorld::polygon_vertices_ (SIZE_MAX = N/A for circle/rect)
+    size_t obs_index = SIZE_MAX;           // index into SimWorld::obstacles_ for collision geometry
 
     // For linestring: vertices stored persistently (same as polygon but open chain)
     std::vector<Vec2> local_linestring_verts;

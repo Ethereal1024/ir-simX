@@ -93,6 +93,7 @@ int SimWorld::add_dynamic_obstacle(KinematicsType kin, float x, float y, float t
     obs.radius = radius;
     obs.compute_aabb();
     obstacles_.push_back(obs);
+    dob.obs_index = obstacles_.size() - 1;
 
     int id = (int)dyn_obstacles_.size();
     dyn_obstacles_.push_back(dob);
@@ -124,6 +125,7 @@ int SimWorld::add_dynamic_rect_obstacle(KinematicsType kin, float x, float y, fl
     obs.theta = theta;
     obs.compute_aabb();
     obstacles_.push_back(obs);
+    dob.obs_index = obstacles_.size() - 1;
 
     int id = (int)dyn_obstacles_.size();
     dyn_obstacles_.push_back(dob);
@@ -158,6 +160,7 @@ int SimWorld::add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y,
 
     // Add obstacle geometry to obstacles_
     polygon_vertices_.push_back(verts);
+    dob.poly_verts_index = polygon_vertices_.size() - 1;
     Obstacle obs;
     obs.type = ShapeType::POLYGON;
     obs.n_verts = (int)verts.size();
@@ -170,6 +173,7 @@ int SimWorld::add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y,
     obs.center.y /= (float)verts.size();
     obs.compute_aabb();
     obstacles_.push_back(obs);
+    dob.obs_index = obstacles_.size() - 1;
 
     int id = (int)dyn_obstacles_.size();
     dyn_obstacles_.push_back(dob);
@@ -177,10 +181,10 @@ int SimWorld::add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y,
 }
 
 int SimWorld::add_dynamic_linestring_obstacle(KinematicsType kin, float x, float y, float theta,
-                                               const std::vector<Vec2>& verts,
-                                               const float* vel_min,
-                                               const float* vel_max,
-                                               const float* vel_acc)
+                                                const std::vector<Vec2>& verts,
+                                                const float* vel_min,
+                                                const float* vel_max,
+                                                const float* vel_acc)
 {
     if (verts.size() < 2) return -1;
 
@@ -206,12 +210,14 @@ int SimWorld::add_dynamic_linestring_obstacle(KinematicsType kin, float x, float
 
     // Add obstacle geometry to obstacles_
     polygon_vertices_.push_back(verts);
+    dob.poly_verts_index = polygon_vertices_.size() - 1;
     Obstacle obs;
     obs.type = ShapeType::LINESTRING;
     obs.n_verts = (int)verts.size();
     obs.verts = polygon_vertices_.back().data();
     obs.compute_aabb();
     obstacles_.push_back(obs);
+    dob.obs_index = obstacles_.size() - 1;
 
     int id = (int)dyn_obstacles_.size();
     dyn_obstacles_.push_back(dob);
@@ -222,9 +228,8 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
     for (int i = 0; i < (int)dyn_obstacles_.size(); i++) {
         auto& dob = dyn_obstacles_[i];
 
-        // Each dynamic obstacle was added to obstacles_ at the same index
-        if (i >= (int)obstacles_.size()) continue;
-        auto& obs = obstacles_[i];
+        if (dob.obs_index == SIZE_MAX || dob.obs_index >= obstacles_.size()) continue;
+        auto& obs = obstacles_[dob.obs_index];
 
         const float* act = obs_actions + i * action_dim;
 
@@ -248,16 +253,17 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
         dob.vy = (action_dim >= 2) ? clipped[1] : 0;
         dob.omega = (action_dim >= 3) ? clipped[2] : (action_dim >= 2 ? clipped[1] : 0);
 
-        // Keep obstacle collision geometry in sync (obstacles_[i] matches dyn_obstacles_[i])
+        // Keep obstacle collision geometry in sync via stored obs_index
         if (dob.shape_type == ShapeType::CIRCLE) {
             obs.center = {dob.x, dob.y};
         } else if (dob.shape_type == ShapeType::RECT) {
             obs.center = {dob.x, dob.y};
             obs.theta = dob.theta;
         } else if (dob.shape_type == ShapeType::POLYGON) {
+            if (dob.poly_verts_index == SIZE_MAX) continue;
             float dx = dob.x - dob.init_center_x;
             float dy = dob.y - dob.init_center_y;
-            auto& pv = polygon_vertices_[i];
+            auto& pv = polygon_vertices_[dob.poly_verts_index];
             pv.resize(dob.local_vertices.size());
             obs.verts = pv.data();
             obs.n_verts = (int)dob.local_vertices.size();
@@ -267,9 +273,10 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
             }
             obs.center = {dob.x, dob.y};
         } else if (dob.shape_type == ShapeType::LINESTRING) {
+            if (dob.poly_verts_index == SIZE_MAX) continue;
             float dx = dob.x - dob.init_center_x;
             float dy = dob.y - dob.init_center_y;
-            auto& pv = polygon_vertices_[i];
+            auto& pv = polygon_vertices_[dob.poly_verts_index];
             pv.resize(dob.local_linestring_verts.size());
             obs.verts = pv.data();
             obs.n_verts = (int)dob.local_linestring_verts.size();
@@ -283,18 +290,6 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
 
     // Re-run collision detection with updated obstacle positions
     detect_collisions();
-}
-
-// ── Helper: transform robot local vertices to world ────────────
-static void transform_vertices(const Vec2* local, int n,
-                               float x, float y, float theta,
-                               Vec2* world_out)
-{
-    float c = std::cos(theta), s = std::sin(theta);
-    for (int i = 0; i < n; i++) {
-        world_out[i].x = x + local[i].x * c - local[i].y * s;
-        world_out[i].y = y + local[i].x * s + local[i].y * c;
-    }
 }
 
 void SimWorld::step(const float* actions, int action_dim) {
@@ -339,9 +334,26 @@ void SimWorld::step(const float* actions, int action_dim) {
 }
 
 void SimWorld::detect_collisions() {
-    // Robot collisions (robot vs all obstacles)
+    // Reset all robot collision flags
     for (auto& r : robots_) {
         r.collision = false;
+    }
+
+    // Robot vs robot collision (SAT on world vertices)
+    for (size_t ri = 0; ri < robots_.size(); ri++) {
+        for (size_t rj = ri + 1; rj < robots_.size(); rj++) {
+            if (sat_intersect(robots_[ri].world_vertices.data(),
+                              (int)robots_[ri].world_vertices.size(),
+                              robots_[rj].world_vertices.data(),
+                              (int)robots_[rj].world_vertices.size())) {
+                robots_[ri].collision = true;
+                robots_[rj].collision = true;
+            }
+        }
+    }
+
+    // Robot collisions (robot vs all obstacles)
+    for (auto& r : robots_) {
         for (size_t oi = 0; oi < obstacles_.size(); oi++) {
             const auto& obs = obstacles_[oi];
             if (check_robot_obstacle_collision(
@@ -355,8 +367,8 @@ void SimWorld::detect_collisions() {
     // Dynamic obstacle collisions (obstacle vs robot, obstacle vs obstacle)
     for (size_t di = 0; di < dyn_obstacles_.size(); di++) {
         auto& dob = dyn_obstacles_[di];
-        if (di >= obstacles_.size()) break;
-        const auto& obs = obstacles_[di];
+        if (dob.obs_index >= obstacles_.size()) continue;
+        const auto& obs = obstacles_[dob.obs_index];
         dob.collision = false;
         // Check vs robots
         for (const auto& r : robots_) {
@@ -371,8 +383,10 @@ void SimWorld::detect_collisions() {
         // Check vs other dynamic obstacles (all shape pairs)
         for (size_t oj = 0; oj < dyn_obstacles_.size(); oj++) {
             if (di == oj) continue;
+            auto& dob_oj = dyn_obstacles_[oj];
+            if (dob_oj.obs_index >= obstacles_.size()) continue;
             if (check_obstacle_obstacle_collision(
-                    obstacles_[di], obstacles_[oj]))
+                    obstacles_[dob.obs_index], obstacles_[dob_oj.obs_index]))
             {
                 dob.collision = true;
                 break;

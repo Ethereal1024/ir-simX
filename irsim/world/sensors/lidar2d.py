@@ -216,6 +216,9 @@ class Lidar2D:
         if not HAS_C_CORE:
             return False
 
+        if self.has_velocity:
+            return False
+
         ep = self._env_param
         objects = ep.objects if ep is not None else []
 
@@ -233,9 +236,6 @@ class Lidar2D:
                 obs_dicts.extend(rects)
                 continue
             if shape == "polygon":
-                # C++ edge-by-edge has ~50% false positive rate for concave
-                # polygons, but Shapely crashes with 1200+ beams on invalid
-                # polygons. C++ is the only stable option.
                 pass  # add polygon to C++ obstacle list below
             d = self._obj_to_c_dict(obj)
             if d:
@@ -258,6 +258,10 @@ class Lidar2D:
             )
             if result is not None and len(result) == self.number:
                 self.range_data[:] = result
+                if self.noise:
+                    for i in range(self.number):
+                        if self.range_data[i] < self.range_max:
+                            self.range_data[i] += rng.normal(0, self.std)
                 return True
         except Exception:
             pass
@@ -283,19 +287,21 @@ class Lidar2D:
                      "vertices": [[float(verts[0, i]), float(verts[1, i])]
                                   for i in range(verts.shape[1])]}
             else:
+                length = float(getattr(gf, 'length', 1.0))
+                width = float(getattr(gf, 'width', 1.0))
                 d = {"type": "rect", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                     "half_w": 0.5, "half_h": 0.5}
+                     "half_w": length / 2, "half_h": width / 2}
         elif shape == "polygon":
             verts = getattr(obj, 'vertices', None)
             if verts is not None and verts.shape[1] >= 3:
-                d = {"type": "polygon", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                d = {"type": "polygon", "x": 0.0, "y": 0.0,
                      "vertices": [[float(verts[0, i]), float(verts[1, i])]
                                   for i in range(verts.shape[1])]}
         elif shape == "linestring":
             # Pass actual vertices so C++ ray-linestring intersection is used
             verts = getattr(obj, 'vertices', None)
             if verts is not None and verts.shape[1] >= 2:
-                d = {"type": "linestring", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                d = {"type": "linestring", "x": 0.0, "y": 0.0,
                      "vertices": [[float(verts[0, i]), float(verts[1, i])]
                                   for i in range(verts.shape[1])]}
 
@@ -319,6 +325,8 @@ class Lidar2D:
 
         Merges adjacent occupied cells into larger rectangles to avoid
         ghost-wall gaps, while keeping the rect count manageable.
+        The merge itself serves as implicit downsampling; the
+        ``downsample_m`` parameter is reserved for future use.
         """
         grid = getattr(obj, 'grid_map', None)
         if grid is None or grid.size == 0:
