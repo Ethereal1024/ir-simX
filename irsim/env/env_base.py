@@ -299,12 +299,13 @@ class EnvBase:
                 if info is not None
                 else np.array([1.0, 1.0], dtype=np.float32)
             )
-            # Pad to 3 elements for C++ (omni_angular uses 3)
-            vmin3 = np.zeros(3, dtype=np.float32)
+            # Pad to 3 elements for C++ (omni_angular uses 3);
+            # unused dims get inf so they don't constrain
+            vmin3 = np.full(3, -np.inf, dtype=np.float32)
             vmin3[: len(vmin)] = vmin
-            vmax3 = np.zeros(3, dtype=np.float32)
+            vmax3 = np.full(3, np.inf, dtype=np.float32)
             vmax3[: len(vmax)] = vmax
-            vacc3 = np.zeros(3, dtype=np.float32)
+            vacc3 = np.full(3, np.inf, dtype=np.float32)
             vacc3[: len(vacc)] = vacc
             rid = w.add_robot(
                 kid, float(s[0, 0]), float(s[1, 0]), float(s[2, 0]), vmin3, vmax3, vacc3
@@ -413,11 +414,11 @@ class EnvBase:
                     vmax = getattr(obj, "vel_max", np.array([1.0, 1.0])).ravel().astype(np.float32)
                     info = getattr(obj, "info", None)
                     vacc = info.acce.ravel().astype(np.float32) if info is not None else np.array([1.0, 1.0], dtype=np.float32)
-                    vmin3 = np.zeros(3, dtype=np.float32)
+                    vmin3 = np.full(3, -np.inf, dtype=np.float32)
                     vmin3[: len(vmin)] = vmin
-                    vmax3 = np.zeros(3, dtype=np.float32)
+                    vmax3 = np.full(3, np.inf, dtype=np.float32)
                     vmax3[: len(vmax)] = vmax
-                    vacc3 = np.zeros(3, dtype=np.float32)
+                    vacc3 = np.full(3, np.inf, dtype=np.float32)
                     vacc3[: len(vacc)] = vacc
                     pos = getattr(obj, "position", None)
                     theta = float(pos[2, 0]) if pos is not None and pos.shape[0] >= 3 else 0.0
@@ -497,11 +498,11 @@ class EnvBase:
             if info is not None
             else np.array([1.0, 1.0], dtype=np.float32)
         )
-        vmin3 = np.zeros(3, dtype=np.float32)
+        vmin3 = np.full(3, -np.inf, dtype=np.float32)
         vmin3[: len(vmin)] = vmin
-        vmax3 = np.zeros(3, dtype=np.float32)
+        vmax3 = np.full(3, np.inf, dtype=np.float32)
         vmax3[: len(vmax)] = vmax
-        vacc3 = np.zeros(3, dtype=np.float32)
+        vacc3 = np.full(3, np.inf, dtype=np.float32)
         vacc3[: len(vacc)] = vacc
         pos = getattr(obj, "position", None)
         theta = float(pos[2, 0]) if pos is not None and pos.shape[0] >= 3 else 0.0
