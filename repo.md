@@ -93,81 +93,502 @@ irsim_core/                 # C++ pybind11 扩展
 - [x] **8 个箭头默认值测试**（`tests/test_arrow_default.py`）
 - [x] **3 个可视化 demo** — circle / polygon / rect 动态障碍物
 
-## 已知问题
+## 已知问题与修复方案
 
-以下问题是在 C++ 路径与 Python 路径行为对比中发现的，按影响程度排列。
+以下问题是在 C++ 路径与 Python 路径行为对比中发现的。每个问题附带可执行的修复方案。
+
+---
 
 ### 严重 — 可能导致数据损坏或行为异常
 
-1. **动态 polygon 障碍物被重复注册**（`env_base.py:394-432`）
-   `w.add_obstacle(vd)` 在 `if not obj.static:` 之外无条件调用，polygon 同时拥有静态副本（卡在初始位置）和动态副本。对比 circle/rect 的对应逻辑正确地在 `if obj.static:` 内部调用。
+#### #1 动态 polygon 障碍物被重复注册
 
-2. **C++→Python 索引映射假设不安全**（`env_base.py:666-667, 710-711`）
-   `_sync_cpp_to_python` 假设 `py_obstacles[i]` 在 C++ 中的索引就是 `i`。但当 `_build_cpp_world` 中 `continue` 跳过某些对象时（缺少 position、geometry、verts），会导致索引错位——C++ 对象 N 的数据被写入 Python 对象 N+1。
+**位置**：`env_base.py:394-432`
 
-3. **`polygon_vertices_[i]` 索引映射错误**（`world.cpp:257, 272`）
-   `polygon_vertices_` deque 存储所有 polygon/linestring（静态+动态），但 `step_dynamic_obstacles` 用动态障碍物索引 `i` 直接访问。存在静态 polygon 时取到错误的顶点数据，导致碰撞检测使用错误的几何体。
+**根因**：`w.add_obstacle(vd)` 在 `if not obj.static:` 条件外无条件执行。对比 circle（`line 346: if obj.static:`）和 rect（`line 363: if obj.static:`）正确地加了门控。
 
-4. **旋转矩形碰撞退化为 AABB**（`collision.cpp:187-189`）
-   `check_rect_rect` 只用轴对称重叠判断。`needs_sat()` 未将 `theta ≠ 0` 的 RECT 路由到 SAT 路径，两个旋转矩形的碰撞产生假阴性。
+**修复**：
+1. 将 `line 411: w.add_obstacle(vd)` 移入 `if obj.static:` 分支内
+2. 对动态 polygon 只调用 `add_dynamic_polygon_obstacle`，不放 `add_obstacle`
+3. 验证：在 `_build_cpp_world` 结束后，`w.num_dynamic_obstacles()` 应等于 YAML 中非静态障碍物数量，`w.num_obstacles()` 应等于静态障碍物数 + 动态障碍物数（因为 `add_dynamic_polygon_obstacle` 内部已注册 `obstacles_`）
 
-5. **未检测 Robot×Robot 碰撞**（`world.cpp:341-382`）
-   `detect_collisions` 只检查 robot×obstacle 和 obstacle×obstacle，多机器人场景中两个机器人相撞无法被检测。
+**预演代码**：
+```python
+elif shape == "polygon":
+    verts = getattr(obj, "vertices", None)
+    if verts is None or verts.shape[1] < 3:
+        continue
+    if obj.static:
+        vlist = [{...}]
+        for vd in vlist:
+            w.add_obstacle(vd)
+    if not obj.static:
+        did = w.add_dynamic_polygon_obstacle(...)
+        ...
+```
+
+**验证方式**：
+```bash
+PYTHONPATH= python3 -m pytest tests/test_cpp_core.py -q
+# 专门写一个 test: 创建一个动态 polygon 障碍物，step 10 步，
+# 检查 w.num_obstacles() 不随时间增长
+```
+
+---
+
+#### #2 C++→Python 索引映射假设不安全
+
+**位置**：`env_base.py:666-667`, `710-711`（sync）；`env_base.py:333-399`（build 中的 continue）
+
+**根因**：`_sync_cpp_to_python` 遍历 `py_robots = [obj for obj ...]` / `py_obstacles = [...]` 并用 `for rid/did in range(...)` 做 1:1 索引访问。但当 `_build_cpp_world` 中因 `pos is None` / `gf is None` / `verts invalid` 而 `continue` 跳过某对象时，C++ 中存储的对象数 < Python 中的对象数，索引就错位了。
+
+**修复方案 A（保守）**：
+1. 在 `_build_cpp_world` 中不再用 `continue` 静默跳过——改为记录 `warned_count` 并 log error
+2. 对于确实无法添加到 C++ 的对象，也调用某种占位注册（如零半径圆）以保持索引对齐
+3. 在 `_sync_cpp_to_python` 开头断言 `w.num_robots() == len(py_robots)`，不等则 raise
+
+**修复方案 B（彻底）**：
+1. 为每个 Python 对象存储其 C++ 索引（`_cpp_id` 属性）
+2. `_sync_cpp_to_python` 改用 `obj._cpp_id` 而非遍历索引来访问 C++ 数据
+3. `_cpp_step` 的 action 数组同样用 `_cpp_id` 对齐
+
+**推荐 B**（一劳永逸），但 A 可作为快速止损先行实施。
+
+**验证方式**：
+```python
+# 构造场景：3 个 robot，其中 1 个没有 position
+# 调用 env.step() 应不崩溃且状态正确
+```
+
+---
+
+#### #3 `polygon_vertices_[i]` 索引映射错误
+
+**位置**：`world.cpp:257`（POLYGON 同步）, `world.cpp:269`（LINESTRING 同步）
+
+**根因**：`polygon_vertices_` deque 存储所有 polygon/linestring 的顶点（包括静态和动态）。但 `step_dynamic_obstacles` 用动态障碍物索引 `i` 直接作为 `polygon_vertices_` 索引。当静态 polygon 注册在动态 polygon 之前时，两者索引就不对齐。
+
+**修复**：
+1. 在 `DynamicObstacle` 结构体中添加 `size_t poly_verts_index` 字段，记录该动态障碍物在 `polygon_vertices_` 中的真实索引
+2. `add_dynamic_polygon_obstacle` / `add_dynamic_linestring_obstacle` 在 `push_back(verts)` 后保存 `dob.poly_verts_index = polygon_vertices_.size() - 1`
+3. `step_dynamic_obstacles` 改用 `polygon_vertices_[dob.poly_verts_index]` 而非 `polygon_vertices_[i]`
+4. 同时修复 C++ 端的 POLYGON 和 LINESTRING 两个分支
+
+**注意事项**：
+- Circle/rect 动态障碍物不在 `polygon_vertices_` 中存储，它们的 `poly_verts_index` 应设为特殊值（如 `SIZE_MAX`）并添加防护
+- `polygon_vertices_` deque 保证 push_back 后已有元素的指针有效，所以存储 size_t 索引而非指针
+
+**验证方式**：
+```bash
+PYTHONPATH= python3 -c "
+from irsim_core import SimWorld
+w = SimWorld()
+# 先添加静态 polygon，再添加动态 polygon，然后 step
+w.add_obstacle({'type':'polygon','vertices':[[0,0],[1,0],[1,1]]})
+w.add_dynamic_polygon_obstacle(0, 5,5,0, [[4,4],[6,4],[6,6],[4,6]])
+w.step_dynamic_obstacles(np.array([0.5,0,0], dtype=np.float32), 3)
+# 检查碰撞几何是否随动态障碍物移动（而非卡在初始位置）
+"
+```
+
+---
+
+#### #4 旋转矩形碰撞退化为 AABB
+
+**位置**：`collision.cpp:187-189`（`check_rect_rect`），`collision.cpp:177-184`（`check_circle_rect`），`collision.cpp:212`（`needs_sat`）
+
+**根因**：`check_rect_rect` 和 `check_circle_rect` 假设矩形为轴对齐。而 `needs_sat()` 只检查 `POLYGON || LINESTRING`，不检查旋转 RECT。
+
+**修复**：
+1. 在 `needs_sat()` 中增加条件：`|| (t == ShapeType::RECT && std::abs(obs.theta) > 1e-6f)` （注意 `needs_sat` 是单个参数的 lambda，需要分别对 a 和 b 判断）
+2. 修改 `needs_sat` 为接受两个 Obstacle 的函数，或改为内联条件
+3. 在 `to_convex_shapes` 中 RECT 已有分支（`obs_to_quad` → 4 点 quad），但未考虑旋转。需要增加旋转 RECT 的 4 点世界坐标计算：`rect_center ± rotate(half_w, half_h, theta)`
+
+**预演代码**（`collision.cpp:212` 附近）：
+```cpp
+auto needs_sat = [](const Obstacle& a, const Obstacle& b) -> bool {
+    auto check_one = [](ShapeType t, float theta) {
+        return t == ShapeType::POLYGON || t == ShapeType::LINESTRING ||
+               (t == ShapeType::RECT && std::abs(theta) > 1e-6f);
+    };
+    return check_one(a.type, a.theta) || check_one(b.type, b.theta);
+};
+// 调用处改为 needs_sat(a, b)
+```
+
+**验证方式**：
+```bash
+PYTHONPATH= python3 -c "
+from irsim_core import SimWorld
+import numpy as np
+w = SimWorld()
+w.add_obstacle({'type':'rect','x':0,'y':0,'half_w':1,'half_h':2})
+# 添加一个 45° 旋转的矩形，两者应碰撞但 axis-aligned 检查会漏
+w.add_dynamic_rect_obstacle(0, 0.5, 0, 0.785, 1, 2)  # rotated 45°
+w.step(np.array([0,0,0], dtype=np.float32), 3)
+# 它们重叠，collision 应为 True
+"
+```
+
+---
+
+#### #5 未检测 Robot×Robot 碰撞
+
+**位置**：`world.cpp:341-382`
+
+**根因**：`detect_collisions` 有 robot×obstacle 和 obstacle×obstacle 检查，但无 robot×robot。
+
+**修复**：
+1. 在 `detect_collisions` 开头添加 robot×robot 碰撞检测循环
+2. 每个 robot 的 `world_vertices` 已在上一步 `step()` 中计算好
+3. 用 SAT 检测两个 robot 的 `world_vertices` 是否相交
+4. 如果碰撞，两个 robot 都设置 `collision = True`
+
+**预演代码**（`world.cpp:detect_collisions` 最前面添加）：
+```cpp
+// Robot vs robot collision
+for (size_t ri = 0; ri < robots_.size(); ri++) {
+    for (size_t rj = ri + 1; rj < robots_.size(); rj++) {
+        if (sat_intersect(robots_[ri].world_vertices.data(),
+                          (int)robots_[ri].world_vertices.size(),
+                          robots_[rj].world_vertices.data(),
+                          (int)robots_[rj].world_vertices.size())) {
+            robots_[ri].collision = true;
+            robots_[rj].collision = true;
+        }
+    }
+}
+```
+
+**注意事项**：
+- 需 `#include "collision.h"`（world.cpp 已包含）以访问 `sat_intersect`
+- 此检查应放在 robot 碰撞复位（`r.collision = false`）之后、obstacle 检查之前
+
+**验证方式**：
+```bash
+PYTHONPATH= python3 -c "
+from irsim_core import SimWorld
+import numpy as np
+w = SimWorld()
+r0 = w.add_robot(0, 0,0,0)  # origin
+r1 = w.add_robot(0, 0.1,0,0)  # overlapping
+w.set_robot_vertices(r0, np.array([-0.3,-0.3,0.3,-0.3,0.3,0.3,-0.3,0.3], dtype=np.float32))
+w.set_robot_vertices(r1, np.array([-0.3,-0.3,0.3,-0.3,0.3,0.3,-0.3,0.3], dtype=np.float32))
+w.step(np.array([0,0,0, 0,0,0], dtype=np.float32), 3)
+assert w.check_robot_collision(0) == True
+assert w.check_robot_collision(1) == True
+"
+```
+
+---
 
 ### 中等 — 功能缺失或静默异常
 
-6. **C++ LiDAR 忽略 `noise=True`**（`lidar2d.py:259-261`）
-   C++ 路径直接赋原值，Python Shapely 路径会加高斯噪声。`noise=True` 时 C++ 返回噪声自由数据。
+#### #6 C++ LiDAR 忽略 noise=True
 
-7. **C++ LiDAR 忽略 `has_velocity=True`**（`lidar2d.py`）
-   速度数组永远为零，Python 路径会从命中障碍物获取速度信息。
+**位置**：`lidar2d.py:259-261`
 
-8. **`_geometry_valid` 被无条件设为 True**（`env_base.py:704, 742`）
-   Python 路径用 `shapely.is_valid()` 校验几何体有效性，C++ 路径跳过校验。如果 C++ 产生无效几何体（如自交 polygon），Python 侧无法感知。
+**根因**：`_c_step` 直接 `self.range_data[:] = result`，未应用噪声。Python fallback 在 `calculate_range:468` 中 `rng.normal(0, self.std, ...)`。
 
-9. **`post_process()` 从未被调用**（`env_base.py` vs `object_base.py:535`）
-   Python 的 `step()` 在传感器步进后调用 `post_process()`，C++ 路径没有。当前是 no-op，但子类重写会静默失效。
+**修复**：在 `_c_step` 的 result 赋值后添加噪声处理（参照 FMCW 的 `_c_step:208-220`）：
+```python
+if ranges is not None and len(ranges) == self.number:
+    self.range_data[:] = ranges
+    if self.noise:
+        for i in range(self.number):
+            if self.range_data[i] < self.range_max:  # only noise hits
+                self.range_data[i] += rng.normal(0, self.std)
+    return True
+```
 
-10. **动态 linestring 障碍物是死代码**（`env_base.py:433-454` vs `623-627`）
-    `_build_cpp_world` 注册了动态 linestring，但 `_cpp_step` 的 G2 白名单不含 `"linestring"`，永远被送入零速度。整个 `_add_dynamic_linestring_obstacle_to_cpp` 方法无效。
+**注意事项**：
+- 仅对被命中的光束加噪声（未命中保持 `range_max`），与 Python 路径一致
+- FMCW LiDAR 已有正确的噪声处理作为参考
 
-11. **障碍物 `pre_process()` 在 G1 时被跳过**（`env_base.py:617-621`）
-    Python 路径无条件调用 `pre_process()`，C++ 的 G1（stop_flag 或 check_arrive）跳过它，导致 wander/loop 目标更新在已到达的障碍物上失效。
+**验证方式**：
+```bash
+PYTHONPATH= python3 -m pytest tests/test_fmcw_lidar2d.py::test_range_and_velocity_noise -v
+# 再写一个针对 base Lidar2D 的 noise test
+```
 
-12. **RECT AABB 不处理旋转**（`geometry.h:78-80`）
-    `compute_aabb()` 对 RECT 类型忽略 `theta`。`step_dynamic_obstacles` 后重算时产生过小的包围盒。
+---
+
+#### #7 C++ LiDAR 忽略 has_velocity=True
+
+**位置**：`lidar2d.py:259-261`
+
+**根因**：C++ 路径未调用 `calculate_range_vel`，速度数组保持全零。
+
+**修复**：该功能设计与 FMCW LiDAR 的 `radial_velocity` 重叠。推荐在 C++ 路径中**不实现 `has_velocity`**，而是引导用户用 `fmcw_lidar2d` 替代。做法：
+1. 在 `_c_step` 开头检查 `self.has_velocity`，若为 True 则 return False（强制走 Python fallback）
+2. 文档中注明：需要速度信息请用 `fmcw_lidar2d`
+
+**替代方案**（如果要实现）：在 `_c_step` 内调用 `calculate_range_vel(intersect_index)`，但需要障碍物命中信息——当前 C++ 只返回 ranges，不返回命中对象。要么扩展 C++ 接口，要么不做。
+
+**验证方式**：确认 `fmcw_lidar2d` 的 `radial_velocity` 能覆盖此需求即可。
+
+---
+
+#### #8 `_geometry_valid` 无条件设为 True
+
+**位置**：`env_base.py:704, 742`
+
+**根因**：sync 中两处 `py_obj._geometry_valid = True`，跳过了 `shapely.is_valid()`。
+
+**修复**：
+1. 在 `_sync_cpp_to_python` 的几何更新后，调用 `py_obj._geometry_valid = shapely.is_valid(py_obj._geometry)` 替代硬编码 True
+2. 确保 `import shapely` 已在文件顶部
+
+**预演**：
+```python
+py_obj._geometry = py_obj.gf.step(py_obj.state)
+py_obj._geometry_valid = shapely.is_valid(py_obj._geometry)  # was: True
+```
+
+**注意事项**：Shapely 的 `is_valid` 对于简单几何体（圆/矩形的 polygon 近似）永远是 True，性能开销可忽略。对用户自定义的复杂 polygon 是必要的校验。
+
+---
+
+#### #9 `post_process()` 从未被调用
+
+**位置**：`env_base.py:561-659` vs `object_base.py:535`
+
+**根因**：`_cpp_step` 在 sync 和 sensor step 后直接调用 `_status_step`，没有 `post_process` 的调用点。
+
+**修复**：在 `_sync_cpp_to_python` 结束后、`_status_step` 之前，遍历所有 robots 和 dynamic obstacles 调用 `post_process()`：
+```python
+self._sync_cpp_to_python()
+self._objects_sensor_step()
+# Add post_process (mirrors obj.step())
+for obj in self.objects:
+    if not obj.static and hasattr(obj, 'post_process'):
+        obj.post_process()
+self._status_step()
+self._world.step()
+```
+
+**注意事项**：当前 `post_process` 是 no-op，所以这个修复不会改变行为，但预防了未来的静默回归。
+
+---
+
+#### #10 动态 linestring 障碍物是死代码
+
+**位置**：`env_base.py:623-627`
+
+**根因**：`_cpp_step` 的 G2 白名单 `("circle", "rectangle", "polygon")` 不含 `"linestring"`。
+
+**修复**：
+1. 在白名单中添加 `"linestring"`
+2. 确认 `_add_dynamic_linestring_obstacle_to_cpp` 在 `_build_cpp_world` 中被正确调用（line 450-451，已存在）
+3. 确认 C++ 的 `step_dynamic_obstacles` 中 LINESTRING 顶点同步已实现（`world.cpp:269-279`，已存在）
+
+**预演**：
+```python
+if shape not in ("circle", "rectangle", "polygon", "linestring"):
+```
+
+**注意事项**：
+- 需配合修复 #3（`polygon_vertices_` 索引），否则 linestring 的碰撞几何会引用错误数据
+- Linestring 仅支持平移，不支持旋转（local_linestring_verts 的同步逻辑只加了 dx/dy 没有旋转）——这在当前范围内可接受，因为 linestring 的典型用例是平移运动
+
+**验证方式**：
+```bash
+PYTHONPATH= python3 -c "
+from irsim_core import SimWorld
+import numpy as np
+w = SimWorld()
+w.add_dynamic_linestring_obstacle(1, 5,0,0, [[4,-1],[6,1]], [-1,-1],[1,1],[1,1])
+w.step_dynamic_obstacles(np.array([-0.5, 0.2, 0], dtype=np.float32), 3)
+px,py,pt = w.get_obstacle_pose(0)
+assert px < 5.0  # moved left
+"
+```
+
+---
+
+#### #11 障碍物 pre_process() 在 G1 时被跳过
+
+**位置**：`env_base.py:617-621`
+
+**根因**：G1（stop_flag 或 check_arrive）直接 `continue`，不调用 `pre_process()`。Python 路径的无条件调用允许 wander/loop 在到达后更新目标。
+
+**修复**：在 G1 的零速度赋值之前，仍然调用 `obj.pre_process()`：
+```python
+if getattr(obj, "stop_flag", False) or obj.check_arrive(obj.goal):
+    obj.pre_process()  # allow wander/loop to renew goal even when stopped
+    w.set_obstacle_velocity(did, 0.0, 0.0)
+    obj._velocity = np.zeros(obj.vel_shape)
+    obs_act_list.extend([0.0, 0.0, 0.0])
+    continue
+```
+
+**注意事项**：
+- `pre_process()` 在 `arrive_flag=True` 时会更换目标并清除 `arrive_flag`，使下次 `check_arrive` 返回 False，障碍物恢复运动
+- 如果 `stop_flag=True`（碰撞停止），`pre_process()` 可能会更换 wander 目标——但障碍物应该保持在停止状态直到碰撞解除。碰撞解除由 `reset()` 处理，在此场景下 wander 更换目标后障碍物被 G1 拦截是合理行为
+
+---
+
+#### #12 RECT AABB 不处理旋转
+
+**位置**：`geometry.h:78-80`
+
+**根因**：`compute_aabb()` 对 RECT 只做 axis-aligned 扩展，未考虑 `theta`。
+
+**修复**：对 `theta ≠ 0` 的 RECT，计算旋转后的四个角点的 AABB：
+```cpp
+} else if (type == ShapeType::RECT) {
+    if (std::abs(theta) < 1e-6f) {
+        aabb = AABB{center - Vec2{half_w, half_h}, center + Vec2{half_w, half_h}};
+    } else {
+        float c = std::cos(theta), s = std::sin(theta);
+        Vec2 corners[4] = {
+            center + Vec2{ half_w*c - half_h*s,  half_w*s + half_h*c},
+            center + Vec2{-half_w*c - half_h*s, -half_w*s + half_h*c},
+            center + Vec2{ half_w*c + half_h*s,  half_w*s - half_h*c},
+            center + Vec2{-half_w*c + half_h*s, -half_w*s - half_h*c}
+        };
+        aabb = AABB();
+        for (auto& p : corners) aabb.expand(p);
+    }
+}
+```
+
+**注意事项**：这个修复与 #4 互补——#4 确保碰撞检测路由到 SAT，#12 确保 AABB 预过滤正确。
+
+---
 
 ### 低 — 设计缺陷或潜在风险
 
-13. **用户提供的速度绕过 Python acc 裁剪**（`env_base.py:582-591`）
-    Python 路径即使用户提供速度也经过 `get_vel_range()` 裁剪。C++ 路径对 `action[obj._id]` 直接传给 C++，仅由 C++ 内部裁剪。
+#### #13 用户速度绕过 Python acc 裁剪
 
-14. **Linestring 碰撞厚度硬编码 0.05**（`collision.cpp:147, 243`）
-    两处独立硬编码，无自定义机制。Python 侧也是 0.05，一致但不可配置。
+**位置**：`env_base.py:582-591`
 
-15. **`_map_to_c_dicts` 参数 `downsample_m` 是死代码**（`lidar2d.py:317`）
-    函数签名接受参数但从未使用。
+**修复**：在 `obj.gen_behavior_vel` 分支外，对用户直接传入的 `action[obj._id]` 也应用 `get_vel_range()` 裁剪：
+```python
+a = action[obj._id] if obj._id < len(action) else None
+if a is not None:
+    a = np.asarray(a).ravel()
+    # Clip user action same as gen_behavior_vel does
+    min_vel, max_vel = obj.get_vel_range()
+    a = np.clip(a.reshape(-1, 1), min_vel, max_vel).ravel()
+```
 
-16. **`_map_to_c_dicts` 占用阈值硬编码 50**（`lidar2d.py:340`）
-    假设 0-100 灰度范围，无文档记录。对于 0-255 地图会被截断。
+---
 
-17. **`point_in_polygon` 函数名误导**（`geometry.h:316-324`）
-    名称暗示通用性但仅适用于 CCW 凸多边形。无前置检查，调错即返回错误结果。
+#### #14 Linestring 碰撞厚度硬编码 0.05
 
-18. **`alloca` 无限增长风险**（`collision.cpp:35`）
-    SAT 不检查顶点数上限直接用 `alloca`。超大 polygon（如 10 万顶点）会栈溢出。
+**位置**：`collision.cpp:147, 243`
 
-19. **pybind 绑定中 omega 默认限幅 ±1**（`pybind_module.cpp`）
-    Python 未传 `vel_min/max` 时 C++ 默认 `[-1,1]`。acker/omni_angular 的 omega 通道被强加不必要的 ±1 限制，而 Python 侧 pad 为 ±inf。
+**修复**：在 `Obstacle` 结构体中添加 `float linestring_half_thickness = 0.05f` 字段。在 pybind 的 `py_to_obstacle` 中从 dict 读取可选字段 `"thickness"`。Python 侧 `_obj_to_c_dict` 中传入。
 
-20. **矩形 `_obj_to_c_dict` 回退尺寸硬编码**（`lidar2d.py:286-287`）
-    `verts.shape[1] != 4` 时（罕见但可能），回退到 `half_w=0.5, half_h=0.5`，忽略实际 `length`/`width`。
+---
 
-21. **机器人顶点回退使用 world-frame**（`env_base.py:316-327`）
-    `original_vertices` 缺失时回退到 `vertices`（可能是 world 坐标而非 local 坐标），注释承认是补丁。
+#### #15 `_map_to_c_dicts` 参数 `downsample_m` 死代码
 
-22. **`_obj_to_c_dict` 同时传递 world 坐标 + position**（`lidar2d.py:280, 292, 298`）
-    polygon/rectangle/ls 的 vertices 是 world 坐标，但同时传了 `x,y` 位置。如果 C++ 将两者叠加会双重平移。当前 C++ 对 POLYGON/LINESTRING 忽略 `x,y`，但对 RECT 使用 `x,y`。
+**位置**：`lidar2d.py:317`
+
+**修复**：删除未使用的参数，或实现下采样逻辑。推荐保留为未来接口但暂时标记 `# TODO`。
+
+---
+
+#### #16 `_map_to_c_dicts` 占用阈值硬编码 50
+
+**位置**：`lidar2d.py:340`
+
+**修复**：将 `> 50` 改为 `> 0`（与 Python 路径中 `ObstacleMap` 的 `grid_map > 0` 检查对齐）。Python 路径用 `grid_map > 0` 判断占据，C++ 用 `> 50` 是不必要的中间值。
+
+---
+
+#### #17 `point_in_polygon` 函数名误导
+
+**位置**：`geometry.h:316-324`
+
+**修复**：重命名为 `point_in_convex_polygon`，并在函数内部加 `assert(is_convex_polygon(...))`（仅 debug build）。检查调用点是否仅用于凸多边形。
+
+---
+
+#### #18 `alloca` 无限增长风险
+
+**位置**：`collision.cpp:35`
+
+**修复**：在 `sat_intersect` 入口处添加顶点数上限检查：
+```cpp
+if (n_a > 256 || n_b > 256) return false;  // degenerate input, skip SAT
+```
+256 顶点远大于正常 polygon（通常 3-8 顶点）。
+
+---
+
+#### #19 pybind omega 默认限幅 ±1
+
+**位置**：`pybind_module.cpp`（多处 `add_dynamic_*` 和 `add_robot` lambdas）
+
+**修复**：将默认值改为 `{-inf, -inf, -inf}` / `{inf, inf, inf}`，与 Python 侧 padding 对齐：
+```cpp
+float vmin[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+float vmax[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+float vacc[3] = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+```
+
+**注意事项**：`FLT_MAX` 替代 `inf`（C++ 中 `std::numeric_limits<float>::max()` 或直接 `3.402823466e+38F`）。同时需确保 `vel_min[j]` 和 `vel_max[j]` 的裁剪逻辑能正确处理 `FLT_MAX` 极值。
+
+---
+
+#### #20 矩形 `_obj_to_c_dict` 回退尺寸硬编码
+
+**位置**：`lidar2d.py:286-287`
+
+**修复**：从 `gf.length` / `gf.width` 读取真实尺寸：
+```python
+else:
+    length = float(getattr(gf, 'length', 1.0))
+    width = float(getattr(gf, 'width', 1.0))
+    d = {"type": "rect", "x": ..., "half_w": length/2, "half_h": width/2}
+```
+
+---
+
+#### #21 机器人顶点回退使用 world-frame
+
+**位置**：`env_base.py:316-327`
+
+**修复**：当 `original_vertices` 不存在时，不 fallback 到 `vertices`（可能是 world-frame），而是保持 C++ 默认的 0.32×0.24 矩形。并在日志中 warning。
+
+---
+
+#### #22 `_obj_to_c_dict` 同时传 world 坐标 + position
+
+**位置**：`lidar2d.py:280, 292, 298`
+
+**分析**：当前 C++ 对 POLYGON/LINESTRING 类型忽略 `x, y`，只用 vertices。对 RECT 类型使用 `x, y`。这不是 bug，但有混淆风险。
+
+**修复**：在 `_obj_to_c_dict` 中对 polygon/linestring 传入 `x=0, y=0`（明确表示不使用），并在 C++ 侧 `py_to_obstacle` 的 POLYGON/LINESTRING 分支中不读取 `x, y`。对 RECT 保持现状。
+
+---
+
+## 修复优先级建议
+
+**第一轮**（每次修改 C++ 后执行 `python3 setup.py build_ext --inplace`）：
+1. #1 动态 polygon 重复注册 — 1 行修复
+2. #12 RECT AABB 旋转 — 10 行修复
+3. #4 旋转矩碰撞退化为 AABB — 15 行修复
+4. #5 Robot×Robot 碰撞 — 10 行修复
+
+**第二轮**：
+5. #3 `polygon_vertices_` 索引 — 需改动 C++ struct + 多处引用
+6. #2 索引映射假设 — 需改动 Python 侧多处
+7. #6 C++ LiDAR noise — 5 行修复
+8. #7 has_velocity — 2 行修复（引导用 fmcw）
+
+**第三轮**：
+9-22 剩余低优先级项目，可穿插进行
+
+每轮结束后运行：
+```bash
+PYTHONPATH= python3 -m pytest tests/ -q \
+  --ignore=tests/test_all_objects_3d.py --ignore=tests/test_all_objects.py
+```
+确认 845 tests 仍通过。
 
 ## 经验教训与注意事项
 
