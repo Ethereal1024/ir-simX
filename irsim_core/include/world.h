@@ -146,4 +146,7 @@ private:
 
     // Update obstacle geometry to match a dynamic obstacle's new position
     void update_dyn_obs_geometry(int dyn_id);
+
+    // Run collision detection for all robots against all obstacles
+    void detect_collisions();
 };

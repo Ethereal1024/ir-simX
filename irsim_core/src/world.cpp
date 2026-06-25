@@ -219,6 +219,9 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
         // Keep obstacle collision geometry in sync
         update_dyn_obs_geometry(i);
     }
+
+    // Re-run collision detection with updated obstacle positions
+    detect_collisions();
 }
 
 // ── Helper: transform robot local vertices to world ────────────
@@ -271,7 +274,10 @@ void SimWorld::step(const float* actions, int action_dim) {
         }
     }
 
-    // Collision detection
+    detect_collisions();
+}
+
+void SimWorld::detect_collisions() {
     for (auto& r : robots_) {
         r.collision = false;
         for (const auto& obs : obstacles_) {

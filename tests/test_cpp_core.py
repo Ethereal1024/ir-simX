@@ -245,6 +245,24 @@ class TestSimWorldDynamicObstacles:
         w.step(robot_actions, 3)
         assert w.check_robot_collision(0)
 
+    def test_dynamic_obstacle_same_frame_collision(self):
+        """Robot and obstacle approach each other; collision detected same frame."""
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        w.add_robot(0, 0.0, 0.0, 0.0)
+        w.add_dynamic_obstacle(0, 1.0, 0.0, 0.0, 0.5)  # 0.5m radius, starts 1m away
+        # Drive robot toward obstacle, obstacle drives toward robot
+        robot_actions = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        obs_actions = np.array([-0.5, 0.0, 0.0], dtype=np.float32)
+        for _ in range(50):
+            w.step(robot_actions, 3)
+            w.step_dynamic_obstacles(obs_actions, 3)
+            if w.check_robot_collision(0):
+                break
+        assert w.check_robot_collision(0), (
+            "Robot and dynamic obstacle should collide when moving toward each other"
+        )
+
 
 # =========================================================================
 # SimWorld — kinematics stepping
