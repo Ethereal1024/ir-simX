@@ -148,7 +148,7 @@ bool check_robot_obstacle_collision(
                         float dx = robot_verts[j].x - cx, dy = robot_verts[j].y - cy;
                         r = std::max(r, dx * dx + dy * dy);
                     }
-                    if (d2 <= r * 1.5f) return true;
+                    if (d2 <= r * 1.01f) return true;
                 }
             }
             return false;
