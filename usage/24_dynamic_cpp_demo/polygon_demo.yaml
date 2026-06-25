@@ -31,7 +31,7 @@ obstacle:
     kinematics: {name: 'diff'}
     behavior: {name: 'dash', wander: True, range_low: [2, 2, -3.14], range_high: [10, 10, 3.14]}
     state:
-      - [2, 10, 0]
+      - [3, 10, 0]
       - [5, 9, 0.5]
       - [8, 10, -0.3]
       - [4, 4, 0.8]

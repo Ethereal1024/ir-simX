@@ -17,12 +17,8 @@ from irsim.util.util import (
     transform_point_with_state,
 )
 
-# Try to import C++ accelerated backend
-try:
-    from cpp import lidar_raycast as _c_lidar_raycast
-    HAS_C_CORE = True
-except ImportError:
-    HAS_C_CORE = False
+# C++ accelerated backend (extracted to _lidar_cpp.py)
+from irsim.world.sensors._lidar_cpp import HAS_C_CORE, c_step as _c_cpp_step, map_to_c_dicts, obj_to_c_dict
 
 if TYPE_CHECKING:
     from irsim.world.object_base import ObjectBase
@@ -212,169 +208,15 @@ class Lidar2D:
         self._init_geometry = self._geometry
 
     def _c_step(self, state) -> bool:
-        """Try C++ accelerated LiDAR step. Returns True on success."""
-        if not HAS_C_CORE:
-            return False
-
-        if self.has_velocity:
-            return False
-
-        ep = self._env_param
-        objects = ep.objects if ep is not None else []
-
-        # Build obstacle dict list, excluding self and unobstructed
-        obs_dicts = []
-        # heading from lidar_origin includes sensor offset rotation (not just robot theta)
-        heading = float(self.lidar_origin[2, 0]) if self.lidar_origin.shape[0] > 2 else 0.0
-
-        for obj in objects:
-            if obj._id == self.obj_id or not obj._geometry_valid or obj.unobstructed:
-                continue
-            shape = getattr(obj, 'shape', None)
-            if shape == "map":
-                rects = self._map_to_c_dicts(obj, downsample_m=0.5)
-                obs_dicts.extend(rects)
-                continue
-            if shape == "polygon":
-                pass  # add polygon to C++ obstacle list below
-            d = self._obj_to_c_dict(obj)
-            if d:
-                obs_dicts.append(d)
-
-        if not obs_dicts:
-            self.range_data[:] = self.range_max
-            return True
-
-        origin = self.lidar_origin
-        ox = float(origin[0, 0]) if origin.shape[0] >= 1 else 0.0
-        oy = float(origin[1, 0]) if origin.shape[1] >= 1 else 0.0
-
-        try:
-            result = _c_lidar_raycast(
-                ox, oy, heading,
-                self.angle_list.astype(np.float32),
-                float(self.range_max),
-                obs_dicts,
-            )
-            if result is not None and len(result) == self.number:
-                self.range_data[:] = result
-                if self.noise:
-                    for i in range(self.number):
-                        if self.range_data[i] < self.range_max:
-                            self.range_data[i] += rng.normal(0, self.std)
-                return True
-        except Exception:
-            pass
-        return False
+        return _c_cpp_step(self, state)
 
     @staticmethod
     def _obj_to_c_dict(obj) -> dict | None:
-        """Convert a world object to a C++ obstacle dict."""
-        shape = getattr(obj, 'shape', None)
-        pos = getattr(obj, 'position', None)
-        if shape is None or pos is None or pos.size < 2:
-            return None
-        gf = getattr(obj, 'gf', None)
-
-        d = None
-        if shape == "circle":
-            d = {"type": "circle", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                 "radius": float(getattr(gf, 'radius', 0.5))}
-        elif shape == "rectangle":
-            verts = getattr(gf, 'vertices', None)
-            if verts is not None and verts.shape[1] == 4:
-                d = {"type": "polygon", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                     "vertices": [[float(verts[0, i]), float(verts[1, i])]
-                                  for i in range(verts.shape[1])]}
-            else:
-                length = float(getattr(gf, 'length', 1.0))
-                width = float(getattr(gf, 'width', 1.0))
-                d = {"type": "rect", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                     "half_w": length / 2, "half_h": width / 2}
-        elif shape == "polygon":
-            verts = getattr(obj, 'vertices', None)
-            if verts is not None and verts.shape[1] >= 3:
-                d = {"type": "polygon", "x": 0.0, "y": 0.0,
-                     "vertices": [[float(verts[0, i]), float(verts[1, i])]
-                                  for i in range(verts.shape[1])]}
-        elif shape == "linestring":
-            # Pass actual vertices so C++ ray-linestring intersection is used
-            verts = getattr(obj, 'vertices', None)
-            if verts is not None and verts.shape[1] >= 2:
-                d = {"type": "linestring", "x": 0.0, "y": 0.0,
-                     "vertices": [[float(verts[0, i]), float(verts[1, i])]
-                                  for i in range(verts.shape[1])]}
-
-        if d is None:
-            return None
-
-        # Add velocity for FMCW radial velocity computation
-        vel_xy = getattr(obj, 'velocity_xy', None)
-        if vel_xy is not None:
-            vel = np.asarray(vel_xy, dtype=float).reshape(-1)[:2]
-            d["vx"] = float(vel[0])
-            d["vy"] = float(vel[1])
-        else:
-            d["vx"] = 0.0
-            d["vy"] = 0.0
-        return d
+        return obj_to_c_dict(obj)
 
     @staticmethod
     def _map_to_c_dicts(obj, downsample_m: float = 0.5) -> list[dict]:
-        """Convert a map obstacle's grid to a list of C++ rect dicts.
-
-        Merges adjacent occupied cells into larger rectangles to avoid
-        ghost-wall gaps, while keeping the rect count manageable.
-        The merge itself serves as implicit downsampling; the
-        ``downsample_m`` parameter is reserved for future use.
-        """
-        grid = getattr(obj, 'grid_map', None)
-        if grid is None or grid.size == 0:
-            return []
-        reso = getattr(obj, 'grid_reso', None)
-        if reso is None or reso.size < 2:
-            return []
-        rx, ry = float(reso[0, 0]), float(reso[1, 0])
-        if rx <= 0 or ry <= 0:
-            return []
-        offset = getattr(obj, 'world_offset', [0.0, 0.0])
-        ox, oy = float(offset[0]), float(offset[1])
-        occ = []
-        gw, gh = grid.shape
-        visited = [[False] * gh for _ in range(gw)]
-
-        for gi in range(gw):
-            for gj in range(gh):
-                if visited[gi][gj] or grid[gi, gj] <= 50:
-                    continue
-                # Find horizontal run extent
-                gje = gj
-                while gje + 1 < gh and grid[gi, gje + 1] > 50:
-                    gje += 1
-                # Extend downward
-                gie = gi
-                while gie + 1 < gw:
-                    all_occupied = True
-                    for j in range(gj, gje + 1):
-                        if grid[gie + 1, j] <= 50:
-                            all_occupied = False
-                            break
-                    if not all_occupied:
-                        break
-                    gie += 1
-                # Mark visited
-                for i in range(gi, gie + 1):
-                    for j in range(gj, gje + 1):
-                        visited[i][j] = True
-                # Add merged rectangle
-                cx = ox + (gi + gie + 1) * rx * 0.5
-                cy = oy + (gj + gje + 1) * ry * 0.5
-                half_w = (gie - gi + 1) * rx * 0.5
-                half_h = (gje - gj + 1) * ry * 0.5
-                occ.append({"type": "rect", "x": cx, "y": cy,
-                            "half_w": half_w, "half_h": half_h,
-                            "vx": 0.0, "vy": 0.0})
-        return occ
+        return map_to_c_dicts(obj, downsample_m)
 
     def step(self, state):
         """
