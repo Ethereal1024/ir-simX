@@ -87,6 +87,37 @@ int SimWorld::add_dynamic_obstacle(KinematicsType kin, float x, float y, float t
     return id;
 }
 
+int SimWorld::add_dynamic_rect_obstacle(KinematicsType kin, float x, float y, float theta,
+                                          float half_w, float half_h,
+                                          const float* vel_min,
+                                          const float* vel_max,
+                                          const float* vel_acc)
+{
+    DynamicObstacle dob;
+    dob.x = x; dob.y = y; dob.theta = theta;
+    dob.kin = kin;
+    dob.shape_type = ShapeType::RECT;
+    dob.half_w = half_w;
+    dob.half_h = half_h;
+
+    if (vel_min) for (int i = 0; i < 3; i++) dob.vel_min[i] = vel_min[i];
+    if (vel_max) for (int i = 0; i < 3; i++) dob.vel_max[i] = vel_max[i];
+    if (vel_acc) for (int i = 0; i < 3; i++) dob.vel_acc[i] = vel_acc[i];
+
+    Obstacle obs;
+    obs.type = ShapeType::RECT;
+    obs.center = {x, y};
+    obs.half_w = half_w;
+    obs.half_h = half_h;
+    obs.compute_aabb();
+    obstacles_.push_back(obs);
+    dob.obs_index = (int)obstacles_.size() - 1;
+
+    int id = (int)dyn_obstacles_.size();
+    dyn_obstacles_.push_back(dob);
+    return id;
+}
+
 int SimWorld::add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y, float theta,
                                             const std::vector<Vec2>& verts,
                                             const float* vel_min,
@@ -139,6 +170,8 @@ void SimWorld::update_dyn_obs_geometry(int dyn_id) {
     auto& obs = obstacles_[dob.obs_index];
 
     if (dob.shape_type == ShapeType::CIRCLE) {
+        obs.center = {dob.x, dob.y};
+    } else if (dob.shape_type == ShapeType::RECT) {
         obs.center = {dob.x, dob.y};
     } else if (dob.shape_type == ShapeType::POLYGON) {
         // Compute translation offset from initial center

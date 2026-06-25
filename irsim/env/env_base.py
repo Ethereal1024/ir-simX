@@ -348,7 +348,7 @@ class EnvBase:
                     }
                 )
                 if not obj.static and shape == "circle":
-                    did = self._add_dynamic_obstacle_to_cpp(w, obj, x, y, radius, gf)
+                    did = self._add_dynamic_obstacle_to_cpp(w, obj, x, y, "circle", radius)
                     if did >= 0:
                         dyn_obs_map[id(obj)] = did
             elif shape == "rectangle":
@@ -381,7 +381,7 @@ class EnvBase:
                     hw = float(getattr(gf, "half_w", 0.5))
                     hh = float(getattr(gf, "half_h", 0.5))
                     did = self._add_dynamic_obstacle_to_cpp(
-                        w, obj, x, y, max(hw, hh), gf
+                        w, obj, x, y, "rectangle", hw, hh
                     )
                     if did >= 0:
                         dyn_obs_map[id(obj)] = did
@@ -475,9 +475,16 @@ class EnvBase:
         self._cpp_world = w
 
     def _add_dynamic_obstacle_to_cpp(
-        self, w: Any, obj: Any, x: float, y: float, approx_radius: float, gf: Any
+        self, w: Any, obj: Any, x: float, y: float, shape_name: str,
+        dim1: float, dim2: float | None = None
     ) -> int:
-        """Add a dynamic obstacle to the C++ SimWorld. Returns the dynamic obstacle id."""
+        """Add a dynamic obstacle to the C++ SimWorld.
+
+        Args:
+            shape_name: "circle" or "rectangle"
+            dim1: radius for circle, half_w for rectangle
+            dim2: half_h for rectangle (None for circle)
+        """
         kin_map = {"diff": 0, "omni": 1, "acker": 2, "omni_angular": 3}
         kid = kin_map.get(getattr(obj, "kinematics", "diff"), 0)
         vmin = (
@@ -498,9 +505,11 @@ class EnvBase:
         vacc3[: len(vacc)] = vacc
         pos = getattr(obj, "position", None)
         theta = float(pos[2, 0]) if pos is not None and pos.shape[0] >= 3 else 0.0
-        return w.add_dynamic_obstacle(
-            kid, x, y, theta, approx_radius, vmin3, vmax3, vacc3
-        )
+        if shape_name == "rectangle":
+            hw = dim1
+            hh = dim2 if dim2 is not None else dim1
+            return w.add_dynamic_rect_obstacle(kid, x, y, theta, hw, hh, vmin3, vmax3, vacc3)
+        return w.add_dynamic_obstacle(kid, x, y, theta, dim1, vmin3, vmax3, vacc3)
 
     def _c_step_available(self) -> bool:
         """Check if C++ acceleration can handle the current scene."""

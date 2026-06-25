@@ -45,6 +45,9 @@ struct DynamicObstacle {
     // For circle
     float radius = 0.5f;
 
+    // For rect
+    float half_w = 0.5f, half_h = 0.5f;
+
     // For polygon: vertices stored persistently
     std::vector<Vec2> local_vertices;     // vertices relative to initial center
     float init_center_x = 0, init_center_y = 0;  // initial absolute center
@@ -82,6 +85,12 @@ public:
                              const float* vel_min = nullptr,
                              const float* vel_max = nullptr,
                              const float* vel_acc = nullptr);
+
+    int add_dynamic_rect_obstacle(KinematicsType kin, float x, float y, float theta,
+                                   float half_w, float half_h,
+                                   const float* vel_min = nullptr,
+                                   const float* vel_max = nullptr,
+                                   const float* vel_acc = nullptr);
 
     // Add a dynamic polygon obstacle.
     // verts: absolute world-coordinate vertices (same as add_polygon_obstacle).

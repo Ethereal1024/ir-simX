@@ -177,6 +177,30 @@ PYBIND11_MODULE(_core, m) {
            py::arg("vel_min") = py::array_t<float>(),
            py::arg("vel_max") = py::array_t<float>(),
            py::arg("vel_acc") = py::array_t<float>())
+        .def("add_dynamic_rect_obstacle", [](SimWorld& w, int kin, float x, float y, float theta,
+                                               float half_w, float half_h,
+                                               py::array_t<float> vel_min = py::array_t<float>(),
+                                               py::array_t<float> vel_max = py::array_t<float>(),
+                                               py::array_t<float> vel_acc = py::array_t<float>()) -> int {
+            float vmin[3] = {-1.0f, -1.0f, -1.0f};
+            float vmax[3] = { 1.0f,  1.0f,  1.0f};
+            float vacc[3] = { 1.0f,  1.0f,  1.0f};
+            if (vel_min.size() > 0) { auto b = vel_min.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vmin[i] = static_cast<const float*>(b.ptr)[i]; }
+            if (vel_max.size() > 0) { auto b = vel_max.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vmax[i] = static_cast<const float*>(b.ptr)[i]; }
+            if (vel_acc.size() > 0) { auto b = vel_acc.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vacc[i] = static_cast<const float*>(b.ptr)[i]; }
+            return w.add_dynamic_rect_obstacle(static_cast<KinematicsType>(kin), x, y, theta,
+                                               half_w, half_h, vmin, vmax, vacc);
+        }, py::arg("kinematics"), py::arg("x"), py::arg("y"), py::arg("theta"),
+           py::arg("half_w"), py::arg("half_h"),
+           py::arg("vel_min") = py::array_t<float>(),
+           py::arg("vel_max") = py::array_t<float>(),
+           py::arg("vel_acc") = py::array_t<float>())
         .def("add_dynamic_polygon_obstacle", [](SimWorld& w, int kin, float x, float y, float theta,
                                                   py::list verts_list,
                                                   py::array_t<float> vel_min = py::array_t<float>(),

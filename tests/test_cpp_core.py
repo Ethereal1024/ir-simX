@@ -213,7 +213,34 @@ class TestSimWorldDynamicObstacles:
         verts = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]
         w.add_dynamic_polygon_obstacle(0, 0.0, 0.0, 0.0, verts)
         w.add_robot(0, 0.0, 0.0, 0.0)
-        # Robot overlaps with polygon at origin -> collision
+        robot_actions = np.zeros(3, dtype=np.float32)
+        w.step(robot_actions, 3)
+        assert w.check_robot_collision(0)
+
+    def test_add_dynamic_rect(self):
+        w = _cc.SimWorld()
+        did = w.add_dynamic_rect_obstacle(0, 5.0, 5.0, 0.0, 2.0, 1.0)
+        assert did == 0
+        assert w.num_dynamic_obstacles() == 1
+        assert w.num_obstacles() == 1
+
+    def test_step_dynamic_rect_moves(self):
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        w.add_dynamic_rect_obstacle(0, 0.0, 0.0, 0.0, 2.0, 1.0)
+        w.add_robot(0, 10.0, 10.0, 0.0)
+        robot_actions = np.zeros(3, dtype=np.float32)
+        w.step(robot_actions, 3)
+        obs_actions = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        w.step_dynamic_obstacles(obs_actions, 3)
+        px, _, _ = w.get_obstacle_pose(0)
+        assert px == pytest.approx(0.01, abs=0.001)
+
+    def test_dynamic_rect_collision_detected(self):
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        w.add_dynamic_rect_obstacle(0, 0.0, 0.0, 0.0, 2.0, 2.0)
+        w.add_robot(0, 0.0, 0.0, 0.0)
         robot_actions = np.zeros(3, dtype=np.float32)
         w.step(robot_actions, 3)
         assert w.check_robot_collision(0)
