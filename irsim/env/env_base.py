@@ -307,8 +307,10 @@ class EnvBase:
             vmax3[: len(vmax)] = vmax
             vacc3 = np.full(3, np.inf, dtype=np.float32)
             vacc3[: len(vacc)] = vacc
+            wb = getattr(obj, "wheelbase", None)
+            wheelbase = float(wb) if wb is not None else 0.5
             rid = w.add_robot(
-                kid, float(s[0, 0]), float(s[1, 0]), float(s[2, 0]), vmin3, vmax3, vacc3
+                kid, float(s[0, 0]), float(s[1, 0]), float(s[2, 0]), vmin3, vmax3, vacc3, wheelbase
             )
 
             # Set robot shape vertices for collision (use original_vertices = local frame)

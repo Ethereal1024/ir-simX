@@ -15,6 +15,8 @@
 struct RobotState {
     float x = 0, y = 0, theta = 0;     // pose
     float vx = 0, vy = 0, omega = 0;   // velocity
+    float steer_angle = 0;              // current steer angle (ACKER only)
+    float wheelbase = 0.5f;             // wheelbase (ACKER only, default 0.5)
     KinematicsType kin = KinematicsType::DIFF;
     std::vector<Vec2> local_vertices;    // shape vertices in robot frame (never modified)
     std::vector<Vec2> world_vertices;    // shape vertices in world frame (updated each step)
@@ -39,6 +41,8 @@ struct RobotState {
 struct DynamicObstacle {
     float x = 0, y = 0, theta = 0;
     float vx = 0, vy = 0, omega = 0;
+    float steer_angle = 0;              // current steer angle (ACKER only)
+    float wheelbase = 0.5f;             // wheelbase (ACKER only)
     KinematicsType kin = KinematicsType::DIFF;
     ShapeType shape_type = ShapeType::CIRCLE;
 
@@ -75,7 +79,8 @@ public:
     int add_robot(KinematicsType kin, float x, float y, float theta,
                   const float* vel_min = nullptr,
                   const float* vel_max = nullptr,
-                  const float* vel_acc = nullptr);
+                  const float* vel_acc = nullptr,
+                  float wheelbase = 0.5f);
     void set_robot_vertices(int robot_id, const Vec2* verts, int n);
     int add_obstacle(const Obstacle& obs);
     int add_polygon_obstacle(const std::vector<Vec2>& verts);

@@ -63,9 +63,10 @@ PYBIND11_MODULE(_core, m) {
         .def("set_step_time", &SimWorld::set_step_time)
         .def("step_time", &SimWorld::step_time)
         .def("add_robot", [](SimWorld& w, int kin, float x, float y, float theta,
-                             py::array_t<float> vel_min = py::array_t<float>(),
-                             py::array_t<float> vel_max = py::array_t<float>(),
-                             py::array_t<float> vel_acc = py::array_t<float>()) -> int {
+                              py::array_t<float> vel_min = py::array_t<float>(),
+                              py::array_t<float> vel_max = py::array_t<float>(),
+                              py::array_t<float> vel_acc = py::array_t<float>(),
+                              float wheelbase = 0.5f) -> int {
             float vmin[3] = {-1.0f, -1.0f, -1.0f};
             float vmax[3] = { 1.0f,  1.0f,  1.0f};
             float vacc[3] = { 1.0f,  1.0f,  1.0f};
@@ -78,11 +79,12 @@ PYBIND11_MODULE(_core, m) {
             if (vel_acc.size() > 0) { auto b = vel_acc.request();
                 for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
                     vacc[i] = static_cast<const float*>(b.ptr)[i]; }
-            return w.add_robot(static_cast<KinematicsType>(kin), x, y, theta, vmin, vmax, vacc);
+            return w.add_robot(static_cast<KinematicsType>(kin), x, y, theta, vmin, vmax, vacc, wheelbase);
         }, py::arg("kinematics"), py::arg("x"), py::arg("y"), py::arg("theta"),
            py::arg("vel_min") = py::array_t<float>(),
            py::arg("vel_max") = py::array_t<float>(),
-           py::arg("vel_acc") = py::array_t<float>())
+           py::arg("vel_acc") = py::array_t<float>(),
+           py::arg("wheelbase") = 0.5f)
         .def("set_robot_vertices", [](SimWorld& w, int id, py::array_t<float> verts) {
             auto buf = verts.request();
             int n = (int)buf.size / 2;

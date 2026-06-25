@@ -4,10 +4,11 @@
 
 int SimWorld::add_robot(KinematicsType kin, float x, float y, float theta,
                         const float* vel_min, const float* vel_max,
-                        const float* vel_acc) {
+                        const float* vel_acc, float wheelbase) {
     RobotState r;
     r.x = x; r.y = y; r.theta = theta;
     r.kin = kin;
+    r.wheelbase = wheelbase;
     r.id = next_id_++;
 
     if (vel_min) for (int i = 0; i < 3; i++) r.vel_min[i] = vel_min[i];
@@ -187,7 +188,7 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
             clipped[j] = a;
         }
 
-        step_kinematics(dob.kin, dob.x, dob.y, dob.theta, clipped, dt_);
+        step_kinematics(dob.kin, dob.x, dob.y, dob.theta, &dob.steer_angle, dob.wheelbase, clipped, dt_);
 
         dob.vx = clipped[0];
         dob.vy = (action_dim >= 2) ? clipped[1] : 0;
@@ -254,7 +255,7 @@ void SimWorld::step(const float* actions, int action_dim) {
             clipped[j] = a;
         }
 
-        step_kinematics(r.kin, r.x, r.y, r.theta, clipped, dt_);
+        step_kinematics(r.kin, r.x, r.y, r.theta, &r.steer_angle, r.wheelbase, clipped, dt_);
 
         r.vx = clipped[0];
         r.vy = (action_dim >= 2) ? clipped[1] : 0;

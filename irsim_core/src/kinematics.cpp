@@ -32,22 +32,24 @@ void step_omni_angular(float& x, float& y, float& theta,
     theta += omega * dt;
 }
 
-void step_acker(float& x, float& y, float& theta,
-                float v, float steer, float dt)
+void step_acker(float& x, float& y, float& theta, float& steer_angle,
+                float v, float desired_steer, float dt, float wheelbase)
 {
-    float L = 0.5f;
-    if (std::abs(steer) < 1e-8f) {
-        x += v * std::cos(theta) * dt;
-        y += v * std::sin(theta) * dt;
-    } else {
-        float R = L / std::tan(steer);
-        float omega = v / R;
-        step_diff(x, y, theta, v, omega, dt);
+    float omega = 0.0f;
+    if (std::abs(steer_angle) > 1e-8f) {
+        // Use current steer angle for turn rate, matching Python semantics
+        omega = v * std::tan(steer_angle) / wheelbase;
     }
+    x += v * std::cos(theta) * dt;
+    y += v * std::sin(theta) * dt;
+    theta += omega * dt;
+    // Update steer angle to desired value for next step
+    steer_angle = desired_steer;
 }
 
 void step_kinematics(KinematicsType type,
                      float& x, float& y, float& theta,
+                     float* steer_angle, float wheelbase,
                      const float* action, float dt)
 {
     switch (type) {
@@ -61,7 +63,7 @@ void step_kinematics(KinematicsType type,
         step_omni_angular(x, y, theta, action[0], action[1], action[2], dt);
         break;
     case KinematicsType::ACKER:
-        step_acker(x, y, theta, action[0], action[1], dt);
+        step_acker(x, y, theta, *steer_angle, action[0], action[1], dt, wheelbase);
         break;
     }
 }

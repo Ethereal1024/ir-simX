@@ -27,10 +27,13 @@ void step_omni(float& x, float& y, float& theta,
 void step_omni_angular(float& x, float& y, float& theta,
                        float vx, float vy, float omega, float dt);
 
-void step_acker(float& x, float& y, float& theta,
-                float v, float steer, float dt);
+void step_acker(float& x, float& y, float& theta, float& steer_angle,
+                float v, float desired_steer, float dt, float wheelbase);
 
 // Dispatch by type
+// steer_angle: current steer angle for ACKER (in/out)
+// wheelbase: used only for ACKER
 void step_kinematics(KinematicsType type,
                      float& x, float& y, float& theta,
+                     float* steer_angle, float wheelbase,
                      const float* action, float dt);
