@@ -5,6 +5,7 @@
 #include "kinematics.h"
 #include "astar.h"
 #include <vector>
+#include <deque>
 #include <cstring>
 
 // ═══════════════════════════════════════════════════════════════
@@ -133,14 +134,14 @@ public:
     const std::vector<Obstacle>& obstacles() const { return obstacles_; }
     AStarPlanner& astar() { return astar_; }
 
-    const std::vector<std::vector<Vec2>>& polygon_vertices() const { return polygon_vertices_; }
+    const std::deque<std::vector<Vec2>>& polygon_vertices() const { return polygon_vertices_; }
 
 private:
     float dt_ = 0.1f;
     std::vector<RobotState> robots_;
     std::vector<DynamicObstacle> dyn_obstacles_;
     std::vector<Obstacle> obstacles_;
-    std::vector<std::vector<Vec2>> polygon_vertices_;  // persistent storage for polygon obs
+    std::deque<std::vector<Vec2>> polygon_vertices_;  // persistent storage (deque: no reallocation on push)
     AStarPlanner astar_;
     int next_id_ = 0;
 

@@ -33,10 +33,23 @@ bool sat_intersect(const Vec2* verts_a, int n_a, const Vec2* verts_b, int n_b) {
     // Collect all potential separating axes (edge normals from both polygons)
     int max_axes = n_a + n_b;
     Vec2* axes = (Vec2*)alloca(max_axes * sizeof(Vec2));
-    get_edge_normals(verts_a, n_a, axes);
-    get_edge_normals(verts_b, n_b, axes + n_a);
+    int n_axes = 0;
+    auto add_normals = [&](const Vec2* verts, int n) {
+        for (int i = 0; i < n; i++) {
+            const Vec2& a = verts[i];
+            const Vec2& b = verts[(i + 1) % n];
+            Vec2 edge = b - a;
+            if (edge.len2() < 1e-12f) continue;  // skip degenerate edges
+            axes[n_axes] = {edge.y, -edge.x};
+            float len = axes[n_axes].len();
+            if (len > 1e-8f) axes[n_axes] = axes[n_axes] / len;
+            n_axes++;
+        }
+    };
+    add_normals(verts_a, n_a);
+    add_normals(verts_b, n_b);
 
-    for (int i = 0; i < max_axes; i++) {
+    for (int i = 0; i < n_axes; i++) {
         Vec2 axis = axes[i];
         float min_a, max_a, min_b, max_b;
         project_polygon(verts_a, n_a, axis, min_a, max_a);
@@ -115,23 +128,7 @@ bool check_robot_obstacle_collision(
         if (obs.verts && obs.n_verts >= 3) {
             if (is_convex_polygon(obs.verts, obs.n_verts))
                 return sat_intersect(robot_verts, n_robot, obs.verts, obs.n_verts);
-            // Concave polygon: check robot-obstacle intersection per edge
-            // using SAT on each edge's triangles
-            for (int i = 0; i < obs.n_verts; i++) {
-                const Vec2& a = obs.verts[i];
-                const Vec2& b = obs.verts[(i + 1) % obs.n_verts];
-                // Check if any robot vertex is inside this edge's inward half-plane
-                // For a CCW polygon, the interior is to the LEFT of each edge
-                Vec2 edge = b - a;
-                float nx = -edge.y, ny = edge.x;  // left normal (interior side)
-                bool all_inside = true;
-                for (int j = 0; j < n_robot; j++) {
-                    Vec2 rv = robot_verts[j] - a;
-                    if (rv.dot({nx, ny}) < 0) { all_inside = false; break; }
-                }
-                if (all_inside) return true;  // robot fully inside this edge
-            }
-            // Fallback: check robot center-to-edge distance
+            // Concave polygon: check robot center-to-edge distance
             for (int i = 0; i < obs.n_verts; i++) {
                 const Vec2& a = obs.verts[i];
                 const Vec2& b = obs.verts[(i + 1) % obs.n_verts];
