@@ -128,28 +128,12 @@ bool check_robot_obstacle_collision(
         if (obs.verts && obs.n_verts >= 3) {
             if (is_convex_polygon(obs.verts, obs.n_verts))
                 return sat_intersect(robot_verts, n_robot, obs.verts, obs.n_verts);
-            // Concave polygon: check robot center-to-edge distance
-            for (int i = 0; i < obs.n_verts; i++) {
-                const Vec2& a = obs.verts[i];
-                const Vec2& b = obs.verts[(i + 1) % obs.n_verts];
-                Vec2 ab = b - a;
-                // Project robot center onto edge
-                float cx = 0, cy = 0;
-                for (int j = 0; j < n_robot; j++) { cx += robot_verts[j].x; cy += robot_verts[j].y; }
-                cx /= n_robot; cy /= n_robot;
-                Vec2 rc = {cx - a.x, cy - a.y};
-                float t = rc.dot(ab) / ab.len2();
-                if (t >= 0 && t <= 1.0f) {
-                    Vec2 closest = a + ab * t;
-                    float d2 = (cx - closest.x) * (cx - closest.x) + (cy - closest.y) * (cy - closest.y);
-                    // Approximate robot as circle with radius = half of max extent
-                    float r = 0;
-                    for (int j = 0; j < n_robot; j++) {
-                        float dx = robot_verts[j].x - cx, dy = robot_verts[j].y - cy;
-                        r = std::max(r, dx * dx + dy * dy);
-                    }
-                    if (d2 <= r * 1.01f) return true;
-                }
+            // Concave polygon: ear-clip triangulation + SAT per triangle
+            auto triangles = ear_clip_triangulate(obs.verts, obs.n_verts);
+            for (const auto& tri : triangles) {
+                Vec2 tri_verts[3] = {obs.verts[tri[0]], obs.verts[tri[1]], obs.verts[tri[2]]};
+                if (sat_intersect(robot_verts, n_robot, tri_verts, 3))
+                    return true;
             }
             return false;
         }
@@ -209,24 +193,45 @@ bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b) {
     auto needs_sat = [](ShapeType t) { return t == ShapeType::POLYGON; };
 
     if (needs_sat(a.type) || needs_sat(b.type)) {
-        Vec2 va[64], vb[64];
-        int na = std::min(a.n_verts, 64);
-        int nb = std::min(b.n_verts, 64);
-        if (a.type == ShapeType::POLYGON && a.verts) {
-            na = std::min(a.n_verts, 64);
-            for (int i = 0; i < na; i++) va[i] = a.verts[i];
-        } else {
-            na = 4;
-            obs_to_quad(a, va);
-        }
-        if (b.type == ShapeType::POLYGON && b.verts) {
-            nb = std::min(b.n_verts, 64);
-            for (int i = 0; i < nb; i++) vb[i] = b.verts[i];
-        } else {
-            nb = 4;
-            obs_to_quad(b, vb);
-        }
-        return sat_intersect(va, na, vb, nb);
+        // Build flat convex-shape lists from each obstacle.
+        // Convex polygons → single entry; concave → triangulated.
+        // Circle/rect → 4-point quad.
+        struct ConvexShape { Vec2 verts[64]; int n; };
+        auto to_convex_shapes = [&obs_to_quad](const Obstacle& o, ConvexShape shapes[64]) -> int {
+            if (o.type == ShapeType::POLYGON && o.verts) {
+                if (is_convex_polygon(o.verts, o.n_verts)) {
+                    int n = std::min(o.n_verts, 64);
+                    for (int i = 0; i < n; i++) shapes[0].verts[i] = o.verts[i];
+                    shapes[0].n = n;
+                    return 1;
+                }
+                auto tris = ear_clip_triangulate(o.verts, o.n_verts);
+                int cnt = 0;
+                for (const auto& t : tris) {
+                    if (cnt >= 64) break;
+                    shapes[cnt].verts[0] = o.verts[t[0]];
+                    shapes[cnt].verts[1] = o.verts[t[1]];
+                    shapes[cnt].verts[2] = o.verts[t[2]];
+                    shapes[cnt].n = 3;
+                    cnt++;
+                }
+                return cnt;
+            }
+            Vec2 q[4];
+            obs_to_quad(o, q);
+            for (int i = 0; i < 4; i++) shapes[0].verts[i] = q[i];
+            shapes[0].n = 4;
+            return 1;
+        };
+        ConvexShape shapes_a[64], shapes_b[64];
+        int na = to_convex_shapes(a, shapes_a);
+        int nb = to_convex_shapes(b, shapes_b);
+        for (int i = 0; i < na; i++)
+            for (int j = 0; j < nb; j++)
+                if (sat_intersect(shapes_a[i].verts, shapes_a[i].n,
+                                  shapes_b[j].verts, shapes_b[j].n))
+                    return true;
+        return false;
     }
 
     // Exact checks for circle/rect pairs

@@ -177,6 +177,7 @@ inline std::vector<std::array<int,3>> ear_clip_triangulate(
     int remaining = n;
     Node* cur = &nodes[0];
     int max_iter = n * n;  // safety limit
+    int convex_sign = 0;   // winding: +1 CCW, -1 CW
 
     while (remaining > 3 && --max_iter > 0) {
         Node* a = cur;
@@ -188,7 +189,15 @@ inline std::vector<std::array<int,3>> ear_clip_triangulate(
 
         // Check if (a,b,c) is convex (same winding as polygon)
         float cross = (vb.x - va.x) * (vc.y - vb.y) - (vb.y - va.y) * (vc.x - vb.x);
-        bool is_ear = (cross != 0);
+        bool is_ear = false;
+        // Ear vertex must have the same winding direction as the polygon.
+        // We determine winding from the initial cross product check; once
+        // winding is known, only corners matching that sign are convex ears.
+        if (cross != 0) {
+            if (convex_sign == 0)
+                convex_sign = (cross > 0) ? 1 : -1;
+            is_ear = (cross > 0) == (convex_sign > 0);
+        }
         if (is_ear) {
             // Ear = no other vertex inside triangle (a,b,c)
             Node* test = c->next;
