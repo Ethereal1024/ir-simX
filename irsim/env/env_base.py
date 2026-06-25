@@ -598,6 +598,9 @@ class EnvBase:
         # Sync C++ results back to Python objects
         self._sync_cpp_to_python()
 
+        # Rebuild geometry tree so Python collision detection uses updated positions
+        self.build_tree()
+
         # LiDAR (delegated to each robot's sensor step, which may use C++ in lidar2d.py)
         self._objects_sensor_step()
 
