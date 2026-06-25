@@ -306,8 +306,8 @@ class Lidar2D:
     def _map_to_c_dicts(obj, downsample_m: float = 0.5) -> list[dict]:
         """Convert a map obstacle's grid to a list of C++ rect dicts.
 
-        Each occupied grid cell becomes a small rect at its exact position.
-        No downsampling merging to avoid obstacle expansion (ghost walls).
+        Merges adjacent occupied cells into larger rectangles to avoid
+        ghost-wall gaps, while keeping the rect count manageable.
         """
         grid = getattr(obj, 'grid_map', None)
         if grid is None or grid.size == 0:
@@ -320,19 +320,40 @@ class Lidar2D:
             return []
         offset = getattr(obj, 'world_offset', [0.0, 0.0])
         ox, oy = float(offset[0]), float(offset[1])
-        half_w = rx * 0.4
-        half_h = ry * 0.4
         occ = []
         gw, gh = grid.shape
-        # Only sample every few cells to keep count manageable
-        step = max(1, int(0.2 / min(rx, ry)))
-        for gi in range(0, gw, step):
-            for gj in range(0, gh, step):
-                if grid[gi, gj] > 50:
-                    cx = ox + (gi + 0.5) * rx
-                    cy = oy + (gj + 0.5) * ry
-                    occ.append({"type": "rect", "x": cx, "y": cy,
-                                "half_w": half_w, "half_h": half_h})
+        visited = [[False] * gh for _ in range(gw)]
+
+        for gi in range(gw):
+            for gj in range(gh):
+                if visited[gi][gj] or grid[gi, gj] <= 50:
+                    continue
+                # Find horizontal run extent
+                gje = gj
+                while gje + 1 < gh and grid[gi, gje + 1] > 50:
+                    gje += 1
+                # Extend downward
+                gie = gi
+                while gie + 1 < gw:
+                    all_occupied = True
+                    for j in range(gj, gje + 1):
+                        if grid[gie + 1, j] <= 50:
+                            all_occupied = False
+                            break
+                    if not all_occupied:
+                        break
+                    gie += 1
+                # Mark visited
+                for i in range(gi, gie + 1):
+                    for j in range(gj, gje + 1):
+                        visited[i][j] = True
+                # Add merged rectangle
+                cx = ox + (gi + gie + 1) * rx * 0.5
+                cy = oy + (gj + gje + 1) * ry * 0.5
+                half_w = (gie - gi + 1) * rx * 0.5
+                half_h = (gje - gj + 1) * ry * 0.5
+                occ.append({"type": "rect", "x": cx, "y": cy,
+                            "half_w": half_w, "half_h": half_h})
         return occ
 
     def step(self, state):
