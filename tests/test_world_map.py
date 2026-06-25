@@ -21,7 +21,7 @@ import pytest
 from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry import box
 
-from irsim.world import map as world_map_module
+from irsim.world.map.map_utils import _grid_collision_geometry
 from irsim.world.map import (
     GridMapGenerator,
     ImageGridGenerator,
@@ -686,7 +686,7 @@ class TestMapIsCollision:
     def test_grid_collision_geometry_none_grid_returns_false(self):
         """_grid_collision_geometry with grid=None returns False."""
         pt = ShapelyPoint(1, 1)
-        out = world_map_module._grid_collision_geometry(
+        out = _grid_collision_geometry(
             None, (1.0, 1.0), pt, (0.0, 0.0)
         )
         assert out is False
@@ -696,7 +696,7 @@ class TestMapIsCollision:
         # Grid 10x10, reso 1.0, offset 0,0. Geometry at 100,100 -> i_min > i_max
         grid = np.zeros((10, 10), dtype=np.float64)
         pt = ShapelyPoint(100, 100)
-        out = world_map_module._grid_collision_geometry(
+        out = _grid_collision_geometry(
             grid, (1.0, 1.0), pt, (0.0, 0.0)
         )
         assert out is False

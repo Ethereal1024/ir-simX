@@ -5,6 +5,8 @@ dist/
 __pycache__/
 *.pyc
 *.so
+.ruff_cache/
+.pytest_cache/
 
 # IDE
 .vscode/

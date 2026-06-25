@@ -9,7 +9,7 @@ import os, subprocess, tempfile, glob, site as _site
 # (sys.meta_path[4]), so the stale .so is loaded instead of the
 # newly built one, silently discarding all C++ changes.
 for sp in _site.getsitepackages():
-    for f in glob.glob(os.path.join(sp, 'irsim_core*.so*')):
+    for f in glob.glob(os.path.join(sp, 'cpp*.so*')):
         try:
             os.remove(f)
             print(f'[setup] removed stale: {f}')
@@ -37,24 +37,23 @@ try:
 except: pass
 if has_avx2:
     cpp_args.extend(["-mavx2", "-mfma", "-DUSE_AVX2"])
-    print("irsim_core: AVX2 enabled")
+    print("cpp: AVX2 enabled")
 
 # ── C++ extension ──────────────────────────────────────────────
 ext_modules = [
     Extension(
-        "irsim_core._core",
+        "cpp._core",
         sources=[
-            "irsim_core/src/geometry.cpp",
-            "irsim_core/src/lidar.cpp",
-            "irsim_core/src/collision.cpp",
-            "irsim_core/src/kinematics.cpp",
-            "irsim_core/src/astar.cpp",
-            "irsim_core/src/world.cpp",
-            "irsim_core/bindings/pybind_module.cpp",
+            "cpp/src/lidar.cpp",
+            "cpp/src/collision.cpp",
+            "cpp/src/kinematics.cpp",
+            "cpp/src/astar.cpp",
+            "cpp/src/world.cpp",
+            "cpp/bindings/pybind_module.cpp",
         ],
         include_dirs=[
             pybind11.get_include(),
-            "irsim_core/include",
+            "cpp/include",
         ],
         extra_compile_args=cpp_args,
         language="c++",

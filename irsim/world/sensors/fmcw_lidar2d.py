@@ -12,7 +12,7 @@ from irsim.util.util import transform_point_with_state
 from irsim.world.sensors.lidar2d import Lidar2D
 
 try:
-    from irsim_core import fmcw_lidar_raycast as _c_fmcw_lidar_raycast
+    from cpp import fmcw_lidar_raycast as _c_fmcw_lidar_raycast
     HAS_FMCW_C_CORE = True
 except ImportError:
     HAS_FMCW_C_CORE = False

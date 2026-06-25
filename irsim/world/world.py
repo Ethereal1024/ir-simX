@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, Optional
 import numpy as np
 
 from irsim.util.util import check_unknown_kwargs
-from irsim.world.map import Map, _downsample_occupancy_grid, resolve_obstacle_map
+from irsim.world.map import Map, resolve_obstacle_map
+from irsim.world.map.map_utils import _downsample_occupancy_grid
 
 if TYPE_CHECKING:
     from irsim.config.world_param import WorldParam

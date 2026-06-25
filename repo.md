@@ -17,7 +17,7 @@ irsim/                      # Python 包（修改入口）
 └── lib/handler/
     └── kinematics_handler.py
 
-irsim_core/                 # C++ pybind11 扩展
+cpp/                         # C++ pybind11 扩展
 ├── include/
 │   ├── geometry.h          # 几何原语 + 射线求交 + 耳切三角剖分 + ray-linestring
 │   ├── collision.h         # SAT + 通用障碍物碰撞检测（含 linestring）

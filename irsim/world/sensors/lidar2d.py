@@ -19,7 +19,7 @@ from irsim.util.util import (
 
 # Try to import C++ accelerated backend
 try:
-    from irsim_core import lidar_raycast as _c_lidar_raycast
+    from cpp import lidar_raycast as _c_lidar_raycast
     HAS_C_CORE = True
 except ImportError:
     HAS_C_CORE = False

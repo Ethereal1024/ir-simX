@@ -1,7 +1,7 @@
-"""Tests for the C++ accelerated core (irsim_core).
+"""Tests for the C++ accelerated core (cpp).
 
 Requires the C++ extension to be built (``pip install -e .``).
-Tests are skipped automatically if ``irsim_core`` is not importable.
+Tests are skipped automatically if ``cpp`` is not importable.
 """
 
 import math
@@ -9,7 +9,7 @@ import math
 import numpy as np
 import pytest
 
-_cc = pytest.importorskip("irsim_core", reason="C++ core not built; skipping")
+_cc = pytest.importorskip("cpp", reason="C++ core not built; skipping")
 
 
 # =========================================================================

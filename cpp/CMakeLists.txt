@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(irsim_core VERSION 0.1.0 LANGUAGES CXX)
+project(cpp VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -67,20 +67,20 @@ set(CORE_HEADERS
 # ── pybind11 module ─────────────────────────────────────────────
 find_package(pybind11 REQUIRED)
 
-pybind11_add_module(irsim_core
+pybind11_add_module(cpp
     ${CORE_SOURCES}
     ${CORE_HEADERS}
     bindings/pybind_module.cpp
 )
 
-target_include_directories(irsim_core PRIVATE include)
-target_compile_options(irsim_core PRIVATE -O3 -march=native)
+target_include_directories(cpp PRIVATE include)
+target_compile_options(cpp PRIVATE -O3 -march=native)
 if(SIMD_FLAGS)
     foreach(flag ${SIMD_FLAGS})
-        target_compile_options(irsim_core PRIVATE ${flag})
+        target_compile_options(cpp PRIVATE ${flag})
     endforeach()
 endif()
-target_link_libraries(irsim_core PRIVATE pybind11::headers)
+target_link_libraries(cpp PRIVATE pybind11::headers)
 
 # ── Tests (standalone, no Python) ───────────────────────────────
 option(BUILD_TESTS "Build standalone tests" ON)

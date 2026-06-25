@@ -33,7 +33,7 @@ from irsim.util.util import normalize_actions, to_numpy
 from irsim.world import ObjectBase, ObjectFactory
 
 try:
-    import irsim_core as _cc
+    import cpp as _cc
 
     HAS_C_CORE = hasattr(_cc, "SimWorld")
 except Exception:
@@ -846,7 +846,7 @@ class EnvBase:
             self.logger.error(
                 "ir-simX requires the C++ core.  Build it with: pip install -e ."
             )
-            raise RuntimeError("C++ core (irsim_core) is not available")
+            raise RuntimeError("C++ core (cpp) is not available")
 
         self._cpp_step(action)
 

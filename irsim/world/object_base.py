@@ -31,9 +31,9 @@ from irsim.util.util import (
 from irsim.world.sensors.sensor_factory import SensorFactory
 
 try:
-    import irsim_core
+    import cpp
 
-    HAS_C_CORE = hasattr(irsim_core, "SimWorld")
+    HAS_C_CORE = hasattr(cpp, "SimWorld")
 except Exception:
     HAS_C_CORE = False
 
