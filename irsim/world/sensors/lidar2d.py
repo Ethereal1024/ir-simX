@@ -221,8 +221,8 @@ class Lidar2D:
 
         # Build obstacle dict list, excluding self and unobstructed
         obs_dicts = []
-        parent_state = self.parent.state if self.parent is not None else state
-        heading = float(parent_state[2, 0]) if parent_state.shape[0] >= 3 else 0.0
+        # heading from lidar_origin includes sensor offset rotation (not just robot theta)
+        heading = float(self.lidar_origin[2, 0]) if self.lidar_origin.shape[0] > 2 else 0.0
 
         for obj in objects:
             if obj._id == self.obj_id or not obj._geometry_valid or obj.unobstructed:
@@ -292,13 +292,12 @@ class Lidar2D:
                      "vertices": [[float(verts[0, i]), float(verts[1, i])]
                                   for i in range(verts.shape[1])]}
         elif shape == "linestring":
-            # Approximate as thin rect
+            # Pass actual vertices so C++ ray-linestring intersection is used
             verts = getattr(obj, 'vertices', None)
             if verts is not None and verts.shape[1] >= 2:
-                cx = float(np.mean(verts[0, :]))
-                cy = float(np.mean(verts[1, :]))
-                d = {"type": "rect", "x": cx, "y": cy,
-                     "half_w": 0.05, "half_h": 0.05}
+                d = {"type": "linestring", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                     "vertices": [[float(verts[0, i]), float(verts[1, i])]
+                                  for i in range(verts.shape[1])]}
 
         if d is None:
             return None

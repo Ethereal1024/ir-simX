@@ -446,6 +446,12 @@ class EnvBase:
                             "half_h": 0.05,
                         }
                     )
+                    if not obj.static:
+                        did = self._add_dynamic_linestring_obstacle_to_cpp(
+                            w, obj, x, y, verts
+                        )
+                        if did >= 0:
+                            dyn_obs_map[id(obj)] = did
             elif shape == "map":
                 # Convert map grid to per-cell rect obstacles (no merging)
                 grid = getattr(obj, "grid_map", None)
@@ -516,6 +522,41 @@ class EnvBase:
             hh = dim2 if dim2 is not None else dim1
             return w.add_dynamic_rect_obstacle(kid, x, y, theta, hw, hh, vmin3, vmax3, vacc3)
         return w.add_dynamic_obstacle(kid, x, y, theta, dim1, vmin3, vmax3, vacc3)
+
+    def _add_dynamic_linestring_obstacle_to_cpp(
+        self, w: Any, obj: Any, x: float, y: float, verts: np.ndarray
+    ) -> int:
+        """Add a dynamic linestring obstacle to the C++ SimWorld.
+
+        Args:
+            verts: (2, N) numpy array of world-frame vertices.
+        """
+        kin_map = {"diff": 0, "omni": 1, "acker": 2, "omni_angular": 3}
+        kid = kin_map.get(getattr(obj, "kinematics", "diff"), 0)
+        vmin = (
+            getattr(obj, "vel_min", np.array([-1.0, -1.0])).ravel().astype(np.float32)
+        )
+        vmax = (
+            getattr(obj, "vel_max", np.array([1.0, 1.0])).ravel().astype(np.float32)
+        )
+        info = getattr(obj, "info", None)
+        vacc = (
+            info.acce.ravel().astype(np.float32)
+            if info is not None
+            else np.array([1.0, 1.0], dtype=np.float32)
+        )
+        vmin3 = np.full(3, -np.inf, dtype=np.float32)
+        vmin3[: len(vmin)] = vmin
+        vmax3 = np.full(3, np.inf, dtype=np.float32)
+        vmax3[: len(vmax)] = vmax
+        vacc3 = np.full(3, np.inf, dtype=np.float32)
+        vacc3[: len(vacc)] = vacc
+        s = getattr(obj, "state", None)
+        theta = float(s[2, 0]) if s is not None and s.shape[0] >= 3 else 0.0
+        vlist_flat = [[float(verts[0, i]), float(verts[1, i])]
+                       for i in range(verts.shape[1])]
+        return w.add_dynamic_linestring_obstacle(kid, x, y, theta, vlist_flat,
+                                                  vmin3, vmax3, vacc3)
 
     def _cpp_step(self, action: list[Any]) -> None:
         """Run one simulation step via C++ SimWorld."""

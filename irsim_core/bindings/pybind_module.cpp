@@ -42,6 +42,22 @@ static Obstacle py_to_obstacle(const py::dict& d,
         } else {
             obs.verts = nullptr;
         }
+    } else if (type == "linestring") {
+        obs.type = ShapeType::LINESTRING;
+        auto vlist = d["vertices"].cast<py::list>();
+        obs.n_verts = (int)vlist.size();
+        if (verts_storage && obs.n_verts >= 2) {
+            verts_storage->clear();
+            verts_storage->reserve(obs.n_verts);
+            for (auto item : vlist) {
+                auto pt = item.cast<py::list>();
+                verts_storage->push_back({pt[0].cast<float>(), pt[1].cast<float>()});
+            }
+            obs.verts = verts_storage->data();
+            obs.compute_aabb();
+        } else {
+            obs.verts = nullptr;
+        }
     }
     // Optional velocity for FMCW LiDAR
     if (d.contains("vx") && d.contains("vy")) {
@@ -120,6 +136,14 @@ PYBIND11_MODULE(_core, m) {
                     verts.push_back({pt[0].cast<float>(), pt[1].cast<float>()});
                 }
                 return w.add_polygon_obstacle(verts);
+            } else if (type == "linestring") {
+                auto vlist = obs_dict["vertices"].cast<py::list>();
+                std::vector<Vec2> verts;
+                for (auto item : vlist) {
+                    auto pt = item.cast<py::list>();
+                    verts.push_back({pt[0].cast<float>(), pt[1].cast<float>()});
+                }
+                return w.add_linestring_obstacle(verts);
             }
             return -1;
         })
@@ -237,7 +261,36 @@ PYBIND11_MODULE(_core, m) {
                 for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
                     vacc[i] = static_cast<const float*>(b.ptr)[i]; }
             return w.add_dynamic_polygon_obstacle(static_cast<KinematicsType>(kin), x, y, theta,
-                                                  verts, vmin, vmax, vacc);
+                                                   verts, vmin, vmax, vacc);
+        }, py::arg("kinematics"), py::arg("x"), py::arg("y"), py::arg("theta"),
+           py::arg("vertices"),
+           py::arg("vel_min") = py::array_t<float>(),
+           py::arg("vel_max") = py::array_t<float>(),
+           py::arg("vel_acc") = py::array_t<float>())
+        .def("add_dynamic_linestring_obstacle", [](SimWorld& w, int kin, float x, float y, float theta,
+                                                      py::list verts_list,
+                                                      py::array_t<float> vel_min = py::array_t<float>(),
+                                                      py::array_t<float> vel_max = py::array_t<float>(),
+                                                      py::array_t<float> vel_acc = py::array_t<float>()) -> int {
+            std::vector<Vec2> verts;
+            for (auto item : verts_list) {
+                auto pt = item.cast<py::list>();
+                verts.push_back({pt[0].cast<float>(), pt[1].cast<float>()});
+            }
+            float vmin[3] = {-1.0f, -1.0f, -1.0f};
+            float vmax[3] = { 1.0f,  1.0f,  1.0f};
+            float vacc[3] = { 1.0f,  1.0f,  1.0f};
+            if (vel_min.size() > 0) { auto b = vel_min.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vmin[i] = static_cast<const float*>(b.ptr)[i]; }
+            if (vel_max.size() > 0) { auto b = vel_max.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vmax[i] = static_cast<const float*>(b.ptr)[i]; }
+            if (vel_acc.size() > 0) { auto b = vel_acc.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vacc[i] = static_cast<const float*>(b.ptr)[i]; }
+            return w.add_dynamic_linestring_obstacle(static_cast<KinematicsType>(kin), x, y, theta,
+                                                      verts, vmin, vmax, vacc);
         }, py::arg("kinematics"), py::arg("x"), py::arg("y"), py::arg("theta"),
            py::arg("vertices"),
            py::arg("vel_min") = py::array_t<float>(),

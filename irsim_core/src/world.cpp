@@ -58,6 +58,18 @@ int SimWorld::add_polygon_obstacle(const std::vector<Vec2>& verts) {
     return (int)obstacles_.size() - 1;
 }
 
+int SimWorld::add_linestring_obstacle(const std::vector<Vec2>& verts) {
+    if (verts.size() < 2) return -1;
+    Obstacle o;
+    o.type = ShapeType::LINESTRING;
+    o.n_verts = (int)verts.size();
+    polygon_vertices_.push_back(verts);
+    o.verts = polygon_vertices_.back().data();
+    o.compute_aabb();
+    obstacles_.push_back(o);
+    return (int)obstacles_.size() - 1;
+}
+
 int SimWorld::add_dynamic_obstacle(KinematicsType kin, float x, float y, float theta,
                                     float radius,
                                     const float* vel_min,
@@ -164,6 +176,48 @@ int SimWorld::add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y,
     return id;
 }
 
+int SimWorld::add_dynamic_linestring_obstacle(KinematicsType kin, float x, float y, float theta,
+                                               const std::vector<Vec2>& verts,
+                                               const float* vel_min,
+                                               const float* vel_max,
+                                               const float* vel_acc)
+{
+    if (verts.size() < 2) return -1;
+
+    DynamicObstacle dob;
+    dob.x = x; dob.y = y; dob.theta = theta;
+    dob.kin = kin;
+    dob.shape_type = ShapeType::LINESTRING;
+
+    if (vel_min) for (int i = 0; i < 3; i++) dob.vel_min[i] = vel_min[i];
+    if (vel_max) for (int i = 0; i < 3; i++) dob.vel_max[i] = vel_max[i];
+    if (vel_acc) for (int i = 0; i < 3; i++) dob.vel_acc[i] = vel_acc[i];
+
+    // Store linestring vertices persistently
+    dob.local_linestring_verts = verts;
+    dob.init_center_x = 0;
+    dob.init_center_y = 0;
+    for (const auto& v : verts) {
+        dob.init_center_x += v.x;
+        dob.init_center_y += v.y;
+    }
+    dob.init_center_x /= (float)verts.size();
+    dob.init_center_y /= (float)verts.size();
+
+    // Add obstacle geometry to obstacles_
+    polygon_vertices_.push_back(verts);
+    Obstacle obs;
+    obs.type = ShapeType::LINESTRING;
+    obs.n_verts = (int)verts.size();
+    obs.verts = polygon_vertices_.back().data();
+    obs.compute_aabb();
+    obstacles_.push_back(obs);
+
+    int id = (int)dyn_obstacles_.size();
+    dyn_obstacles_.push_back(dob);
+    return id;
+}
+
 void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) {
     for (int i = 0; i < (int)dyn_obstacles_.size(); i++) {
         auto& dob = dyn_obstacles_[i];
@@ -212,6 +266,17 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
                 pv[vi].y = dob.local_vertices[vi].y + dy;
             }
             obs.center = {dob.x, dob.y};
+        } else if (dob.shape_type == ShapeType::LINESTRING) {
+            float dx = dob.x - dob.init_center_x;
+            float dy = dob.y - dob.init_center_y;
+            auto& pv = polygon_vertices_[i];
+            pv.resize(dob.local_linestring_verts.size());
+            obs.verts = pv.data();
+            obs.n_verts = (int)dob.local_linestring_verts.size();
+            for (size_t vi = 0; vi < dob.local_linestring_verts.size(); vi++) {
+                pv[vi].x = dob.local_linestring_verts[vi].x + dx;
+                pv[vi].y = dob.local_linestring_verts[vi].y + dy;
+            }
         }
         obs.compute_aabb();
     }

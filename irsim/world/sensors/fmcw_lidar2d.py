@@ -150,8 +150,7 @@ class FMCWLidar2D(Lidar2D):
         objects = ep.objects if ep is not None else []
 
         obs_dicts = []
-        parent_state = getattr(self.parent, 'state', state) if self.parent is not None else state
-        heading = float(parent_state[2, 0]) if parent_state.shape[0] >= 3 else 0.0
+        heading = float(self.lidar_origin[2, 0]) if self.lidar_origin.shape[0] > 2 else 0.0
 
         convertible_count = 0
         converted_count = 0

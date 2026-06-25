@@ -138,6 +138,25 @@ bool check_robot_obstacle_collision(
             return false;
         }
         return false;
+    case ShapeType::LINESTRING:
+        if (obs.verts && obs.n_verts >= 2) {
+            // Treat each segment as a thin oriented rectangle (OBB) and SAT.
+            for (int i = 0; i < obs.n_verts - 1; i++) {
+                Vec2 a = obs.verts[i], b = obs.verts[i + 1];
+                Vec2 dir = (b - a).normalized();
+                constexpr float half_thick = 0.05f;  // default linestring half-thickness
+                Vec2 perp{ -dir.y * half_thick, dir.x * half_thick};
+                Vec2 seg_quad[4] = {
+                    {a.x - perp.x, a.y - perp.y},
+                    {b.x - perp.x, b.y - perp.y},
+                    {b.x + perp.x, b.y + perp.y},
+                    {a.x + perp.x, a.y + perp.y}
+                };
+                if (sat_intersect(robot_verts, n_robot, seg_quad, 4))
+                    return true;
+            }
+        }
+        return false;
     default:
         return false;
     }
@@ -189,8 +208,8 @@ bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b) {
         }
     };
 
-    // Handle pairs that need SAT (polygon involved)
-    auto needs_sat = [](ShapeType t) { return t == ShapeType::POLYGON; };
+    // Handle pairs that need SAT (polygon or linestring involved)
+    auto needs_sat = [](ShapeType t) { return t == ShapeType::POLYGON || t == ShapeType::LINESTRING; };
 
     if (needs_sat(a.type) || needs_sat(b.type)) {
         // Build flat convex-shape lists from each obstacle.
@@ -213,6 +232,22 @@ bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b) {
                     shapes[cnt].verts[1] = o.verts[t[1]];
                     shapes[cnt].verts[2] = o.verts[t[2]];
                     shapes[cnt].n = 3;
+                    cnt++;
+                }
+                return cnt;
+            }
+            if (o.type == ShapeType::LINESTRING && o.verts && o.n_verts >= 2) {
+                int cnt = 0;
+                constexpr float half_thick = 0.05f;
+                for (int i = 0; i < o.n_verts - 1 && cnt < 64; i++) {
+                    Vec2 a = o.verts[i], b = o.verts[i + 1];
+                    Vec2 dir = (b - a).normalized();
+                    Vec2 perp{ -dir.y * half_thick, dir.x * half_thick};
+                    shapes[cnt].verts[0] = {a.x - perp.x, a.y - perp.y};
+                    shapes[cnt].verts[1] = {b.x - perp.x, b.y - perp.y};
+                    shapes[cnt].verts[2] = {b.x + perp.x, b.y + perp.y};
+                    shapes[cnt].verts[3] = {a.x + perp.x, a.y + perp.y};
+                    shapes[cnt].n = 4;
                     cnt++;
                 }
                 return cnt;

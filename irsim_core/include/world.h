@@ -56,6 +56,9 @@ struct DynamicObstacle {
     std::vector<Vec2> local_vertices;     // vertices relative to initial center
     float init_center_x = 0, init_center_y = 0;  // initial absolute center
 
+    // For linestring: vertices stored persistently (same as polygon but open chain)
+    std::vector<Vec2> local_linestring_verts;
+
     // Collision flag (set by detect_collisions when overlapping another object)
     bool collision = false;
 
@@ -84,6 +87,7 @@ public:
     void set_robot_vertices(int robot_id, const Vec2* verts, int n);
     int add_obstacle(const Obstacle& obs);
     int add_polygon_obstacle(const std::vector<Vec2>& verts);
+    int add_linestring_obstacle(const std::vector<Vec2>& verts);
 
     // Add a dynamic obstacle (has kinematics, moves each step).
     // The obstacle geometry is also added to obstacles_ for collision.
@@ -107,6 +111,14 @@ public:
                                      const float* vel_min = nullptr,
                                      const float* vel_max = nullptr,
                                      const float* vel_acc = nullptr);
+
+    // Add a dynamic linestring obstacle.
+    // verts: absolute world-coordinate vertices (open chain, n ≥ 2).
+    int add_dynamic_linestring_obstacle(KinematicsType kin, float x, float y, float theta,
+                                        const std::vector<Vec2>& verts,
+                                        const float* vel_min = nullptr,
+                                        const float* vel_max = nullptr,
+                                        const float* vel_acc = nullptr);
 
     // ── Step ──
     // Advance all robots by one step with given actions.

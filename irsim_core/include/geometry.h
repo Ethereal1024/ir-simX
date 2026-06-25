@@ -80,6 +80,8 @@ struct Obstacle {
             aabb = AABB{center - Vec2{half_w, half_h}, center + Vec2{half_w, half_h}};
         } else if (type == ShapeType::POLYGON && verts) {
             for (int i = 0; i < n_verts; i++) aabb.expand(verts[i]);
+        } else if (type == ShapeType::LINESTRING && verts) {
+            for (int i = 0; i < n_verts; i++) aabb.expand(verts[i]);
         }
     }
 };
@@ -321,6 +323,34 @@ inline bool point_in_polygon(Vec2 p, const Vec2* verts, int n) {
     return true;
 }
 
+// ── Ray-linestring intersection ──────────────────────────────
+// Linestring: open chain of n edges (n_verts points, n_verts-1 segments).
+// Returns nearest intersection distance along ray.
+inline bool intersect_ray_linestring(
+    Vec2 o, Vec2 d, const Vec2* verts, int n_verts, float& t_out)
+{
+    if (n_verts < 2) return false;
+    float min_t = FLT_MAX;
+    for (int i = 0; i < n_verts - 1; i++) {
+        const Vec2& a = verts[i];
+        const Vec2& b = verts[i + 1];
+        Vec2 ab = b - a;
+        float denom = d.cross(ab);
+        if (std::abs(denom) < 1e-12f) continue;
+        Vec2 ao = a - o;
+        float t = ao.cross(ab) / denom;
+        float u = ao.cross(d) / denom;
+        if (std::abs(t) <= 1e-6f && u >= -1e-6f && u <= 1.0f + 1e-6f) {
+            t_out = 0.0f; return true;
+        }
+        if (t > 1e-6f && u > 1e-6f && u < 1.0f - 1e-6f) {
+            if (t < min_t) min_t = t;
+        }
+    }
+    if (min_t < FLT_MAX) { t_out = min_t; return true; }
+    return false;
+}
+
 // Generic ray-obstacle intersection dispatcher.
 inline bool intersect_ray_obstacle(
     Vec2 o, Vec2 d, const Obstacle& obs, float& t_out)
@@ -336,6 +366,10 @@ inline bool intersect_ray_obstacle(
     case ShapeType::POLYGON:
         if (obs.verts)
             return intersect_ray_polygon(o, d, obs.verts, obs.n_verts, t_out);
+        return false;
+    case ShapeType::LINESTRING:
+        if (obs.verts)
+            return intersect_ray_linestring(o, d, obs.verts, obs.n_verts, t_out);
         return false;
     default:
         return false;
