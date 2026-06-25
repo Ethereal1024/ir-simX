@@ -52,6 +52,9 @@ struct DynamicObstacle {
     std::vector<Vec2> local_vertices;     // vertices relative to initial center
     float init_center_x = 0, init_center_y = 0;  // initial absolute center
 
+    // Collision flag (set by detect_collisions when overlapping another object)
+    bool collision = false;
+
     // Velocity and acceleration limits
     float vel_min[3] = {-1.0f, -1.0f, -1.0f};
     float vel_max[3] = { 1.0f,  1.0f,  1.0f};

@@ -278,6 +278,7 @@ void SimWorld::step(const float* actions, int action_dim) {
 }
 
 void SimWorld::detect_collisions() {
+    // Robot collisions (robot vs all obstacles)
     for (auto& r : robots_) {
         r.collision = false;
         for (const auto& obs : obstacles_) {
@@ -286,6 +287,42 @@ void SimWorld::detect_collisions() {
             {
                 r.collision = true;
                 break;
+            }
+        }
+    }
+    // Dynamic obstacle collisions (obstacle vs robot, obstacle vs obstacle)
+    for (auto& dob : dyn_obstacles_) {
+        dob.collision = false;
+        const auto& obs = obstacles_[dob.obs_index];
+        // Check vs robots
+        for (const auto& r : robots_) {
+            if (check_robot_obstacle_collision(
+                    r.world_vertices.data(), (int)r.world_vertices.size(), obs))
+            {
+                dob.collision = true;
+                break;
+            }
+        }
+        if (dob.collision) continue;
+        // Check vs other dynamic obstacles (polygon vs shape only)
+        for (auto& other : dyn_obstacles_) {
+            if (&dob == &other) continue;
+            const auto& obs_other = obstacles_[other.obs_index];
+            // Use other's vertices as the "robot" polygon for the check
+            if (obs_other.verts && obs_other.n_verts >= 3) {
+                if (check_robot_obstacle_collision(
+                        obs_other.verts, obs_other.n_verts, obs))
+                {
+                    dob.collision = true;
+                    break;
+                }
+            } else if (obs.verts && obs.n_verts >= 3) {
+                if (check_robot_obstacle_collision(
+                        obs.verts, obs.n_verts, obs_other))
+                {
+                    dob.collision = true;
+                    break;
+                }
             }
         }
     }

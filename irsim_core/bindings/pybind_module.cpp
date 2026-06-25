@@ -153,6 +153,9 @@ PYBIND11_MODULE(_core, m) {
             const auto& o = w.dynamic_obstacle(id);
             return py::make_tuple(o.vx, o.vy, o.omega);
         })
+        .def("get_obstacle_collision", [](SimWorld& w, int id) -> bool {
+            return w.dynamic_obstacle(id).collision;
+        })
         .def("add_dynamic_obstacle", [](SimWorld& w, int kin, float x, float y, float theta,
                                          float radius,
                                          py::array_t<float> vel_min = py::array_t<float>(),

@@ -661,6 +661,7 @@ class EnvBase:
             py_obj = py_obstacles[did]
             pose = w.get_obstacle_pose(did)
             vel = w.get_obstacle_velocity(did)
+            collided = w.get_obstacle_collision(did)
 
             state = py_obj.state
             if state.dtype.kind in ("i", "u"):
@@ -688,6 +689,7 @@ class EnvBase:
             if py_obj.gf is not None:
                 py_obj._geometry = py_obj.gf.step(py_obj.state)
                 py_obj._geometry_valid = True
+            py_obj.collision_flag = collided
             py_obj._invalidate_reactive_cache()
 
     @normalize_actions
