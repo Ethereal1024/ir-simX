@@ -392,10 +392,10 @@ class TestSimulationLoop:
         action_id = 1
         env.step(action_list, action_id)
 
-    def test_objects_step(self, env_factory):
-        """Test internal _objects_step method."""
+    def test_cpp_step_runs(self, env_factory):
+        """Test the C++ step method runs without error."""
         env = env_factory("test_collision_avoidance.yaml", full=True)
-        env._objects_step([np.array([1, 0]).reshape(2, 1)])
+        env.step()
         assert True  # No exception raised
 
     def test_done_detection(self, env_factory):

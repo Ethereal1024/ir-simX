@@ -546,43 +546,20 @@ class ObjectBase:
         """
         Check the current status of the object, including arrival and collision detection.
 
-        This method evaluates collision detection and sets stop flags based on the collision mode.
-        It also handles different collision modes like 'stop', 'reactive', 'unobstructed',
-        and 'unobstructed_obstacles'.
+        This method sets stop flags based on collision mode and arrival status.
+        Collision detection is handled by the C++ SimWorld and synced via
+        collision_flag.
         """
         self.check_arrive_status()
 
-        # C++ detection already set collision_flag; skip stale Python STRtree
-        if self.collision_flag:
-            if self._world_param.collision_mode == "stop":
-                self.stop_flag = True
-            if (self._world_param.collision_mode == "unobstructed_obstacles"
-                    and self.role == "robot"):
-                self.stop_flag = True
+        if not self.collision_flag:
             return
 
-        self.check_collision_status()
-
         if self._world_param.collision_mode == "stop":
-            self.stop_flag = any(not obj.unobstructed for obj in self.collision_obj)
-
-        elif self._world_param.collision_mode == "reactive":
-            "currently same as unobstructed: to be further implemented"
-            pass
-
-        elif self._world_param.collision_mode == "unobstructed":
-            pass
-
-        elif self._world_param.collision_mode == "unobstructed_obstacles":
-            if self.role == "robot":
-                self.stop_flag = any(not obj.unobstructed for obj in self.collision_obj)
-            elif self.role == "obstacle":
-                self.stop_flag = False
-        else:
-            if self._world_param.count % 50 == 0 and self.role == "robot":
-                self.logger.warning(
-                    f"collision mode {self._world_param.collision_mode} is not defined within [stop, reactive, unobstructed, unobstructed_obstacles], the unobstructed mode is used"
-                )
+            self.stop_flag = True
+        if (self._world_param.collision_mode == "unobstructed_obstacles"
+                and self.role == "robot"):
+            self.stop_flag = True
 
     def check_arrive_status(self):
         """

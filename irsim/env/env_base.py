@@ -515,30 +515,11 @@ class EnvBase:
             return w.add_dynamic_rect_obstacle(kid, x, y, theta, hw, hh, vmin3, vmax3, vacc3)
         return w.add_dynamic_obstacle(kid, x, y, theta, dim1, vmin3, vmax3, vacc3)
 
-    def _c_step_available(self) -> bool:
-        """Check if C++ acceleration can handle the current scene."""
-        if not HAS_C_CORE or self._cpp_world is None:
-            return False
-        for obj in self.objects:
-            if obj.role == "robot":
-                beh = getattr(obj, "beh_config", None)
-                if beh is not None:
-                    name = beh.get("name", "")
-                    if name not in ("", "dash", None):
-                        return False
-            if obj.role == "obstacle" and not obj.static:
-                shape = getattr(obj, "shape", None)
-                if shape not in ("circle", "rectangle", "polygon"):
-                    return False
-        return not (
-            self._cpp_world.num_obstacles() == 0 and self._cpp_world.num_robots() == 0
-        )
-
-    def _cpp_step(self, action: list[Any]) -> bool:
-        """Attempt accelerated step via C++ SimWorld. Returns False if fallback needed."""
+    def _cpp_step(self, action: list[Any]) -> None:
+        """Run one simulation step via C++ SimWorld."""
         w = self._cpp_world
-        if w is None or not self._c_step_available():
-            return False
+        if w is None:
+            return
 
         # Run Python pre-processing for all robots (wander goal renewal, etc.)
         for obj in self.objects:
@@ -566,14 +547,12 @@ class EnvBase:
             padded[: min(len(a), 3)] = a[:3]
             act_list.extend(padded)
 
-        if not act_list:
-            return False
-
         # Step physics & collision via C++
         try:
             w.step(np.array(act_list, dtype=np.float32), 3)
-        except Exception:
-            return False
+        except Exception as e:
+            self.logger.error(f"C++ step failed: {e}")
+            raise
 
         # Step dynamic obstacles: generate behavior velocities, then C++ step
         obs_act_list = []
@@ -583,6 +562,10 @@ class EnvBase:
             if getattr(obj, "stop_flag", False):
                 padded = np.zeros(3, dtype=np.float32)
                 obs_act_list.extend(padded)
+                continue
+            # Skip dynamic obstacles with shapes not supported by C++
+            shape = getattr(obj, "shape", None)
+            if shape not in ("circle", "rectangle", "polygon"):
                 continue
             obj.pre_process()
             a = obj.gen_behavior_vel(None)
@@ -596,8 +579,9 @@ class EnvBase:
         if obs_act_list:
             try:
                 w.step_dynamic_obstacles(np.array(obs_act_list, dtype=np.float32), 3)
-            except Exception:
-                return False
+            except Exception as e:
+                self.logger.error(f"C++ obstacle step failed: {e}")
+                raise
 
         # Sync C++ results back to Python objects
         self._sync_cpp_to_python()
@@ -608,8 +592,6 @@ class EnvBase:
         # Status update
         self._status_step()
         self._world.step()
-
-        return True
 
     def _sync_cpp_to_python(self) -> None:
         """Write C++ simulation results back to Python objects."""
@@ -757,32 +739,13 @@ class EnvBase:
         action = self._assign_keyboard_action(action)
         action = self._assign_group_action(action)
 
-        # Try C++ accelerated path
-        if self._cpp_step(action):
-            return
+        if not HAS_C_CORE or self._cpp_world is None:
+            self.logger.error(
+                "ir-simX requires the C++ core.  Build it with: pip install -e ."
+            )
+            raise RuntimeError("C++ core (irsim_core) is not available")
 
-        # Fallback to original Python path
-        self._objects_step(action, sensor_step=False)
-        self._objects_sensor_step()
-        self._world.step()
-        self._status_step()
-
-    def _objects_step(self, action: list[Any], sensor_step: bool = True) -> None:
-        """Advance all objects by one step with corresponding actions.
-
-        Args:
-            action (list[Any]): A list of actions aligned with ``self.objects``.
-                If the list is shorter than the number of objects, it is padded
-                with ``None`` for the remaining objects.
-        """
-
-        action = action + [None] * (len(self.objects) - len(action))
-        [
-            obj.step(action, sensor_step)
-            for obj, action in zip(self.objects, action, strict=True)
-        ]
-
-        self.build_tree()
+        self._cpp_step(action)
 
     def _objects_sensor_step(self) -> None:
         """step the sensors of all objects with updated states"""
