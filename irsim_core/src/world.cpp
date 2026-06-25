@@ -66,6 +66,8 @@ int SimWorld::add_dynamic_obstacle(KinematicsType kin, float x, float y, float t
     DynamicObstacle dob;
     dob.x = x; dob.y = y; dob.theta = theta;
     dob.kin = kin;
+    dob.shape_type = ShapeType::CIRCLE;
+    dob.radius = radius;
 
     if (vel_min) for (int i = 0; i < 3; i++) dob.vel_min[i] = vel_min[i];
     if (vel_max) for (int i = 0; i < 3; i++) dob.vel_max[i] = vel_max[i];
@@ -85,10 +87,74 @@ int SimWorld::add_dynamic_obstacle(KinematicsType kin, float x, float y, float t
     return id;
 }
 
+int SimWorld::add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y, float theta,
+                                            const std::vector<Vec2>& verts,
+                                            const float* vel_min,
+                                            const float* vel_max,
+                                            const float* vel_acc)
+{
+    DynamicObstacle dob;
+    dob.x = x; dob.y = y; dob.theta = theta;
+    dob.kin = kin;
+    dob.shape_type = ShapeType::POLYGON;
+
+    if (vel_min) for (int i = 0; i < 3; i++) dob.vel_min[i] = vel_min[i];
+    if (vel_max) for (int i = 0; i < 3; i++) dob.vel_max[i] = vel_max[i];
+    if (vel_acc) for (int i = 0; i < 3; i++) dob.vel_acc[i] = vel_acc[i];
+
+    // Store polygon vertices persistently
+    dob.local_vertices = verts;
+    dob.init_center_x = 0;
+    dob.init_center_y = 0;
+    for (const auto& v : verts) {
+        dob.init_center_x += v.x;
+        dob.init_center_y += v.y;
+    }
+    dob.init_center_x /= (float)verts.size();
+    dob.init_center_y /= (float)verts.size();
+
+    // Add obstacle geometry to obstacles_
+    polygon_vertices_.push_back(verts);
+    Obstacle obs;
+    obs.type = ShapeType::POLYGON;
+    obs.n_verts = (int)verts.size();
+    obs.verts = polygon_vertices_.back().data();
+    obs.center = {0, 0};
+    for (const auto& v : verts) {
+        obs.center.x += v.x; obs.center.y += v.y;
+    }
+    obs.center.x /= (float)verts.size();
+    obs.center.y /= (float)verts.size();
+    obs.compute_aabb();
+    obstacles_.push_back(obs);
+    dob.obs_index = (int)obstacles_.size() - 1;
+
+    int id = (int)dyn_obstacles_.size();
+    dyn_obstacles_.push_back(dob);
+    return id;
+}
+
 void SimWorld::update_dyn_obs_geometry(int dyn_id) {
     auto& dob = dyn_obstacles_[dyn_id];
     auto& obs = obstacles_[dob.obs_index];
-    obs.center = {dob.x, dob.y};
+
+    if (dob.shape_type == ShapeType::CIRCLE) {
+        obs.center = {dob.x, dob.y};
+    } else if (dob.shape_type == ShapeType::POLYGON) {
+        // Compute translation offset from initial center
+        float dx = dob.x - dob.init_center_x;
+        float dy = dob.y - dob.init_center_y;
+        // Update the persistent vertex storage
+        auto& pv = polygon_vertices_[dob.obs_index];
+        pv.resize(dob.local_vertices.size());
+        obs.verts = pv.data();
+        obs.n_verts = (int)dob.local_vertices.size();
+        for (size_t i = 0; i < dob.local_vertices.size(); i++) {
+            pv[i].x = dob.local_vertices[i].x + dx;
+            pv[i].y = dob.local_vertices[i].y + dy;
+        }
+        obs.center = {dob.x, dob.y};
+    }
     obs.compute_aabb();
 }
 

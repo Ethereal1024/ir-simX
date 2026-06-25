@@ -40,6 +40,14 @@ struct DynamicObstacle {
     float vx = 0, vy = 0, omega = 0;
     KinematicsType kin = KinematicsType::DIFF;
     int obs_index = -1;  // index into obstacles_ for collision geometry
+    ShapeType shape_type = ShapeType::CIRCLE;
+
+    // For circle
+    float radius = 0.5f;
+
+    // For polygon: vertices stored persistently
+    std::vector<Vec2> local_vertices;     // vertices relative to initial center
+    float init_center_x = 0, init_center_y = 0;  // initial absolute center
 
     // Velocity and acceleration limits
     float vel_min[3] = {-1.0f, -1.0f, -1.0f};
@@ -74,6 +82,14 @@ public:
                              const float* vel_min = nullptr,
                              const float* vel_max = nullptr,
                              const float* vel_acc = nullptr);
+
+    // Add a dynamic polygon obstacle.
+    // verts: absolute world-coordinate vertices (same as add_polygon_obstacle).
+    int add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y, float theta,
+                                     const std::vector<Vec2>& verts,
+                                     const float* vel_min = nullptr,
+                                     const float* vel_max = nullptr,
+                                     const float* vel_acc = nullptr);
 
     // ── Step ──
     // Advance all robots by one step with given actions.

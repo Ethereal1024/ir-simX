@@ -403,7 +403,27 @@ class EnvBase:
                 ]
                 for vd in vlist:
                     w.add_obstacle(vd)
-                # Polygon dynamic obstacles are not yet supported in C++
+                if not obj.static:
+                    # Add as a dynamic polygon obstacle
+                    vlist_flat = [[float(verts[0, i]), float(verts[1, i])]
+                                  for i in range(verts.shape[1])]
+                    kin_map = {"diff": 0, "omni": 1, "acker": 2, "omni_angular": 3}
+                    kid = kin_map.get(getattr(obj, "kinematics", "diff"), 0)
+                    vmin = getattr(obj, "vel_min", np.array([-1.0, -1.0])).ravel().astype(np.float32)
+                    vmax = getattr(obj, "vel_max", np.array([1.0, 1.0])).ravel().astype(np.float32)
+                    info = getattr(obj, "info", None)
+                    vacc = info.acce.ravel().astype(np.float32) if info is not None else np.array([1.0, 1.0], dtype=np.float32)
+                    vmin3 = np.zeros(3, dtype=np.float32)
+                    vmin3[: len(vmin)] = vmin
+                    vmax3 = np.zeros(3, dtype=np.float32)
+                    vmax3[: len(vmax)] = vmax
+                    vacc3 = np.zeros(3, dtype=np.float32)
+                    vacc3[: len(vacc)] = vacc
+                    pos = getattr(obj, "position", None)
+                    theta = float(pos[2, 0]) if pos is not None and pos.shape[0] >= 3 else 0.0
+                    did = w.add_dynamic_polygon_obstacle(kid, x, y, theta, vlist_flat, vmin3, vmax3, vacc3)
+                    if did >= 0:
+                        dyn_obs_map[id(obj)] = did
             elif shape == "linestring":
                 # Approximate linestring as thin rect for collision
                 verts = getattr(obj, "vertices", None)
@@ -495,8 +515,7 @@ class EnvBase:
                         return False
             if obj.role == "obstacle" and not obj.static:
                 shape = getattr(obj, "shape", None)
-                # C++ dynamic obstacles only support circle/rectangle shapes
-                if shape not in ("circle", "rectangle"):
+                if shape not in ("circle", "rectangle", "polygon"):
                     return False
         return not (
             self._cpp_world.num_obstacles() == 0 and self._cpp_world.num_robots() == 0
