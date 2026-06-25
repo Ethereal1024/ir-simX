@@ -1,4 +1,3 @@
-import os, sys; sys.path.insert(0, '/home/fanshu/Workplace/ir-simX')
 import irsim
 
 """
