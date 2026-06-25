@@ -136,6 +136,13 @@ public:
     const DynamicObstacle& dynamic_obstacle(int id) const { return dyn_obstacles_[id]; }
     DynamicObstacle& dynamic_obstacle(int id) { return dyn_obstacles_[id]; }
 
+    void set_obstacle_velocity(int id, float vx, float vy) {
+        if (id >= 0 && id < (int)dyn_obstacles_.size()) {
+            dyn_obstacles_[id].vx = vx;
+            dyn_obstacles_[id].vy = vy;
+        }
+    }
+
     const std::vector<Obstacle>& obstacles() const { return obstacles_; }
     AStarPlanner& astar() { return astar_; }
 

@@ -2,6 +2,9 @@
 
 ## 2.10.1 (unreleased)
 
+- Features:
+  - Add C++ accelerated FMCW LiDAR raycasting via `fmcw_lidar_raycast`, reusing the same ray-intersection engine as `lidar2d` and computing per-beam radial velocity in C++. (`([#PR]())`)
+
 - Fix:
   - Suppress the default velocity arrow on static obstacles by gating the handler-derived `show_arrow` on `not self.static` (regression from v2.9.2's kinematics-handler registry refactor). ([#313](https://github.com/hanruihua/ir-sim/pull/313))
 

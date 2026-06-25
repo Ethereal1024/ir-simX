@@ -43,6 +43,11 @@ static Obstacle py_to_obstacle(const py::dict& d,
             obs.verts = nullptr;
         }
     }
+    // Optional velocity for FMCW LiDAR
+    if (d.contains("vx") && d.contains("vy")) {
+        obs.vx = d["vx"].cast<float>();
+        obs.vy = d["vy"].cast<float>();
+    }
     return obs;
 }
 
@@ -157,6 +162,9 @@ PYBIND11_MODULE(_core, m) {
         })
         .def("get_obstacle_collision", [](SimWorld& w, int id) -> bool {
             return w.dynamic_obstacle(id).collision;
+        })
+        .def("set_obstacle_velocity", [](SimWorld& w, int id, float vx, float vy) {
+            w.set_obstacle_velocity(id, vx, vy);
         })
         .def("add_dynamic_obstacle", [](SimWorld& w, int kin, float x, float y, float theta,
                                          float radius,
@@ -286,8 +294,8 @@ PYBIND11_MODULE(_core, m) {
     }, "Standalone LiDAR raycast (scalar)");
 
     m.def("lidar_raycast", [](float ox, float oy, float heading,
-                               py::array_t<float> angles, float range_max,
-                               py::list obstacles_py) -> py::array_t<float>
+                                py::array_t<float> angles, float range_max,
+                                py::list obstacles_py) -> py::array_t<float>
     {
         auto buf = angles.request();
         int n = (int)buf.size;
@@ -308,6 +316,37 @@ PYBIND11_MODULE(_core, m) {
                       static_cast<float*>(res_buf.ptr));
         return result;
     }, "Auto-selected LiDAR raycast");
+
+    m.def("fmcw_lidar_raycast", [](float ox, float oy, float heading,
+                                     float sensor_vx, float sensor_vy,
+                                     bool motion_compensate,
+                                     py::array_t<float> angles, float range_max,
+                                     py::list obstacles_py) -> py::tuple
+    {
+        auto buf = angles.request();
+        int n = (int)buf.size;
+        auto angles_ptr = static_cast<const float*>(buf.ptr);
+
+        std::vector<Obstacle> obs_list;
+        std::vector<std::vector<Vec2>> verts_bufs;
+        for (auto item : obstacles_py) {
+            auto d = item.cast<py::dict>();
+            verts_bufs.emplace_back();
+            obs_list.push_back(py_to_obstacle(d, &verts_bufs.back()));
+        }
+
+        auto ranges = py::array_t<float>(n);
+        auto velos = py::array_t<float>(n);
+        auto r_buf = ranges.request();
+        auto v_buf = velos.request();
+        fmcw_lidar_raycast({ox, oy}, heading,
+                           sensor_vx, sensor_vy, motion_compensate,
+                           angles_ptr, n, range_max,
+                           obs_list.data(), (int)obs_list.size(),
+                           static_cast<float*>(r_buf.ptr),
+                           static_cast<float*>(v_buf.ptr));
+        return py::make_tuple(ranges, velos);
+    }, "FMCW LiDAR raycast — returns (ranges, velocities) tuple");
 
     // ── Kinematics standalone ─────────────────────────────────
     m.def("step_diff", [](float x, float y, float theta,

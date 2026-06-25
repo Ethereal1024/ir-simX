@@ -69,6 +69,7 @@ struct Obstacle {
     // For POLYGON: vertices are stored externally, use n_verts + get_vert()
     const Vec2* verts = nullptr;
     int n_verts = 0;
+    float vx = 0, vy = 0;   // velocity for FMCW radial velocity computation
     AABB aabb;
 
     void compute_aabb() {

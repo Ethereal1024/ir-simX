@@ -2,6 +2,8 @@
 
 Robots can carry sensors for environment perception. IR-SIM provides a 2D LiDAR (`lidar2d`) and a simplified 2D FMCW LiDAR (`fmcw_lidar2d`, with per-beam radial velocity), plus an optional field-of-view (FOV) region; all are attached per object in the YAML file. This page shows how to configure them and tune noise.
 
+In ir-simX, both LiDAR variants are accelerated via C++ ray-intersection, with the FMCW variant also computing per-beam radial velocities directly in C++.
+
 ## LiDAR Configuration Parameters
 
 The YAML configuration file and Python Script below shows an example of a robot with a 2D LiDAR sensor:
@@ -174,6 +176,8 @@ Gaussian noise is added to the LiDAR sensor with the `std` and `angle_std` param
 ## FMCW LiDAR Configuration Parameters
 
 IR-SIM also provides a simplified 2D FMCW LiDAR sensor named `fmcw_lidar2d`. It keeps the same beam geometry as the standard 2D LiDAR, but each valid beam additionally reports a scalar `radial_velocity` measurement. This makes it useful for demonstrating how Doppler measurements can help interpret dynamic obstacles.
+
+In ir-simX, the FMCW LiDAR raycasting automatically uses the same C++ accelerated ray-intersection engine as the standard LiDAR, computing ranges *and* per-beam radial velocities in C++ for high throughput.
 
 The example below uses a stationary ego sensor with a forward 120-degree field of view and multiple moving obstacles. When plotting is enabled, valid returns are colorized by radial velocity and marked at their endpoints.
 

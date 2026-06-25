@@ -171,3 +171,47 @@ void lidar_raycast(
 {
     lidar_raycast_scalar(origin, heading, angles, n_beams, range_max, obstacles, n_obs, ranges_out);
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  FMCW LiDAR raycast — ranges + per-beam radial velocity
+// ═══════════════════════════════════════════════════════════════
+
+void fmcw_lidar_raycast(
+    Vec2 origin, float heading,
+    float sensor_vx, float sensor_vy,
+    bool motion_compensate,
+    const float* angles, int n_beams, float range_max,
+    const Obstacle* obstacles, int n_obs,
+    float* ranges_out,
+    float* velocities_out)
+{
+    for (int i = 0; i < n_beams; i++) {
+        float angle = angles[i] + heading;
+        Vec2 dir{std::cos(angle), std::sin(angle)};
+        float min_t = range_max;
+        int best_obs = -1;
+
+        for (int j = 0; j < n_obs; j++) {
+            float t;
+            if (intersect_ray_obstacle(origin, dir, obstacles[j], t)) {
+                if (t < min_t) {
+                    min_t = t;
+                    best_obs = j;
+                }
+            }
+        }
+
+        ranges_out[i] = min_t;
+        if (best_obs >= 0) {
+            float ovx = obstacles[best_obs].vx;
+            float ovy = obstacles[best_obs].vy;
+            if (!motion_compensate) {
+                ovx -= sensor_vx;
+                ovy -= sensor_vy;
+            }
+            velocities_out[i] = ovx * dir.x + ovy * dir.y;
+        } else {
+            velocities_out[i] = 0.0f;
+        }
+    }
+}

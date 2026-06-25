@@ -533,8 +533,8 @@ class EnvBase:
         for obj in self.objects:
             if obj.role != "robot":
                 continue
-            # Respect stop_flag (mirrors obj.step() early-return behavior)
-            if getattr(obj, "stop_flag", False):
+            # Respect stop_flag / static (mirrors obj.step() early-return behavior)
+            if getattr(obj, "stop_flag", False) or getattr(obj, "static", False):
                 padded = np.zeros(3, dtype=np.float32)
                 act_list.extend(padded)
                 continue
@@ -556,24 +556,46 @@ class EnvBase:
             self.logger.error(f"C++ step failed: {e}")
             raise
 
-        # Step dynamic obstacles: generate behavior velocities, then C++ step
+        # Step dynamic obstacles: generate behavior velocities, then C++ step.
+        #
+        # Mirrors object_base.py:508-516.  Three gates before normal stepping:
+        #   G1 — stop_flag / goal arrival  →  zero C++ velocity + zero action
+        #   G2 — unsupported shape          →  zero action (pad for index alignment)
+        #   G3 — normal step                →  pre_process + gen_behavior_vel
+        # C++ step_dynamic_obstacles reapplies acc clipping internally; we
+        # neutralise that by pre-writing the behaviour velocity into the C++
+        # state so that cur_vel == act and the acc window trivially includes act.
         obs_act_list = []
-        for obj in self.objects:
-            if obj.role != "obstacle" or obj.static:
+        dyn_obstacles = [obj for obj in self.objects if obj.role == "obstacle" and not obj.static]
+        for did, obj in enumerate(dyn_obstacles):
+            # ── G1: immobilised obstacles  ──
+            # stop_flag:   collision-triggered halt
+            # check_arrive: OmniDash returns [0,0] inside goal_threshold, but
+            #               gen_behavior_vel's acc clip would push it to a
+            #               non-zero residual.  Bypass early.
+            if getattr(obj, "stop_flag", False) or obj.check_arrive(obj.goal):
+                w.set_obstacle_velocity(did, 0.0, 0.0)
+                obj._velocity = np.zeros(obj.vel_shape)
+                obs_act_list.extend([0.0, 0.0, 0.0])
                 continue
-            if getattr(obj, "stop_flag", False):
-                padded = np.zeros(3, dtype=np.float32)
-                obs_act_list.extend(padded)
-                continue
-            # Skip dynamic obstacles with shapes not supported by C++
+
+            # ── G2: shape not handled by C++ (still pad for index alignment)
             shape = getattr(obj, "shape", None)
             if shape not in ("circle", "rectangle", "polygon"):
+                obs_act_list.extend([0.0, 0.0, 0.0])
                 continue
+
+            # ── G3: normal step  ──
             obj.pre_process()
             a = obj.gen_behavior_vel(None)
             if a is None or np.all(a == 0):
                 a = getattr(obj, "_velocity", np.zeros((2, 1)))
             a = np.asarray(a).ravel()
+
+            # Pre-write desired velocity so C++ acc clip is a no-op.
+            w.set_obstacle_velocity(did, float(a[0]),
+                                    float(a[1]) if len(a) > 1 else 0.0)
+
             padded = np.zeros(3, dtype=np.float32)
             padded[: min(len(a), 3)] = a[:3]
             obs_act_list.extend(padded)

@@ -30,3 +30,18 @@ void lidar_raycast(
     const float* angles, int n_beams, float range_max,
     const Obstacle* obstacles, int n_obs,
     float* ranges_out);
+
+// FMCW LiDAR raycast: returns ranges + per-beam radial velocity.
+// sensor_vx, sensor_vy: velocity of the sensor (robot) in world frame.
+// motion_compensate: if true, use obstacle world velocity directly;
+//   if false, subtract sensor velocity (relative velocity in sensor frame).
+// velocities_out: radial velocity per beam (dot(rel_vel, beam_dir)).
+//   Set to 0 for beams with no hit.
+void fmcw_lidar_raycast(
+    Vec2 origin, float heading,
+    float sensor_vx, float sensor_vy,
+    bool motion_compensate,
+    const float* angles, int n_beams, float range_max,
+    const Obstacle* obstacles, int n_obs,
+    float* ranges_out,
+    float* velocities_out);

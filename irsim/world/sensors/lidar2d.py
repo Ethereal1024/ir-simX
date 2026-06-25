@@ -231,8 +231,6 @@ class Lidar2D:
             if shape == "map":
                 rects = self._map_to_c_dicts(obj, downsample_m=0.5)
                 obs_dicts.extend(rects)
-                if rects:
-                    has_map_obs = True
                 continue
             if shape == "polygon":
                 # C++ edge-by-edge has ~50% false positive rate for concave
@@ -274,33 +272,47 @@ class Lidar2D:
             return None
         gf = getattr(obj, 'gf', None)
 
+        d = None
         if shape == "circle":
-            return {"type": "circle", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                    "radius": float(getattr(gf, 'radius', 0.5))}
+            d = {"type": "circle", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                 "radius": float(getattr(gf, 'radius', 0.5))}
         elif shape == "rectangle":
             verts = getattr(gf, 'vertices', None)
             if verts is not None and verts.shape[1] == 4:
-                return {"type": "polygon", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                        "vertices": [[float(verts[0, i]), float(verts[1, i])]
-                                     for i in range(verts.shape[1])]}
-            return {"type": "rect", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                    "half_w": 0.5, "half_h": 0.5}
+                d = {"type": "polygon", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                     "vertices": [[float(verts[0, i]), float(verts[1, i])]
+                                  for i in range(verts.shape[1])]}
+            else:
+                d = {"type": "rect", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                     "half_w": 0.5, "half_h": 0.5}
         elif shape == "polygon":
             verts = getattr(obj, 'vertices', None)
-            if verts is None or verts.shape[1] < 3:
-                return None
-            return {"type": "polygon", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
-                    "vertices": [[float(verts[0, i]), float(verts[1, i])]
-                                 for i in range(verts.shape[1])]}
+            if verts is not None and verts.shape[1] >= 3:
+                d = {"type": "polygon", "x": float(pos[0, 0]), "y": float(pos[1, 0]),
+                     "vertices": [[float(verts[0, i]), float(verts[1, i])]
+                                  for i in range(verts.shape[1])]}
         elif shape == "linestring":
             # Approximate as thin rect
             verts = getattr(obj, 'vertices', None)
             if verts is not None and verts.shape[1] >= 2:
                 cx = float(np.mean(verts[0, :]))
                 cy = float(np.mean(verts[1, :]))
-                return {"type": "rect", "x": cx, "y": cy,
-                        "half_w": 0.05, "half_h": 0.05}
-        return None
+                d = {"type": "rect", "x": cx, "y": cy,
+                     "half_w": 0.05, "half_h": 0.05}
+
+        if d is None:
+            return None
+
+        # Add velocity for FMCW radial velocity computation
+        vel_xy = getattr(obj, 'velocity_xy', None)
+        if vel_xy is not None:
+            vel = np.asarray(vel_xy, dtype=float).reshape(-1)[:2]
+            d["vx"] = float(vel[0])
+            d["vy"] = float(vel[1])
+        else:
+            d["vx"] = 0.0
+            d["vy"] = 0.0
+        return d
 
     @staticmethod
     def _map_to_c_dicts(obj, downsample_m: float = 0.5) -> list[dict]:
@@ -353,7 +365,8 @@ class Lidar2D:
                 half_w = (gie - gi + 1) * rx * 0.5
                 half_h = (gje - gj + 1) * ry * 0.5
                 occ.append({"type": "rect", "x": cx, "y": cy,
-                            "half_w": half_w, "half_h": half_h})
+                            "half_w": half_w, "half_h": half_h,
+                            "vx": 0.0, "vy": 0.0})
         return occ
 
     def step(self, state):

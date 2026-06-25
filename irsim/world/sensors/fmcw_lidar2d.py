@@ -11,6 +11,12 @@ from irsim.util.random import rng
 from irsim.util.util import transform_point_with_state
 from irsim.world.sensors.lidar2d import Lidar2D
 
+try:
+    from irsim_core import fmcw_lidar_raycast as _c_fmcw_lidar_raycast
+    HAS_FMCW_C_CORE = True
+except ImportError:
+    HAS_FMCW_C_CORE = False
+
 
 class FMCWLidar2D(Lidar2D):
     """Simulate a 2D FMCW LiDAR using ray intersections plus Doppler projection.
@@ -89,6 +95,9 @@ class FMCWLidar2D(Lidar2D):
         self._state = state
         self.lidar_origin = transform_point_with_state(self.offset, self._state)
 
+        if self._c_step(state):
+            return
+
         origin_xy = np.array([self.lidar_origin[0, 0], self.lidar_origin[1, 0]])
         sensor_theta = (
             float(self.lidar_origin[2, 0]) if self.lidar_origin.shape[0] > 2 else 0.0
@@ -131,6 +140,90 @@ class FMCWLidar2D(Lidar2D):
             segments.append([tuple(origin_xy), tuple(segment_end)])
 
         self._geometry = MultiLineString(segments)
+
+    def _c_step(self, state) -> bool:
+        """Try C++ accelerated FMCW LiDAR step. Returns True on success."""
+        if not HAS_FMCW_C_CORE:
+            return False
+
+        ep = self._env_param
+        objects = ep.objects if ep is not None else []
+
+        obs_dicts = []
+        parent_state = getattr(self.parent, 'state', state) if self.parent is not None else state
+        heading = float(parent_state[2, 0]) if parent_state.shape[0] >= 3 else 0.0
+
+        convertible_count = 0
+        converted_count = 0
+        for obj in objects:
+            if obj._id == self.obj_id or not obj._geometry_valid or obj.unobstructed:
+                continue
+            shape = getattr(obj, 'shape', None)
+            if shape == "map":
+                rects = self._map_to_c_dicts(obj, downsample_m=0.5)
+                convertible_count += 1
+                if rects:
+                    obs_dicts.extend(rects)
+                    converted_count += 1
+                continue
+            if shape == "polygon":
+                pass
+            d = self._obj_to_c_dict(obj)
+            convertible_count += 1
+            if d:
+                obs_dicts.append(d)
+                converted_count += 1
+
+        # If there were objects but none could be converted to C++ format,
+        # fall back to the Python Shapely path.
+        if convertible_count > 0 and converted_count == 0:
+            return False
+
+        if not obs_dicts:
+            self.range_data[:] = self.range_max
+            self.radial_velocity[:] = 0.0
+            self.valid[:] = False
+            return True
+
+        origin = self.lidar_origin
+        ox = float(origin[0, 0]) if origin.shape[0] >= 1 else 0.0
+        oy = float(origin[1, 0]) if origin.shape[1] >= 1 else 0.0
+
+        sensor_vel = self._sensor_velocity_xy()
+        svx = float(sensor_vel[0])
+        svy = float(sensor_vel[1])
+
+        try:
+            ranges, radial_vels = _c_fmcw_lidar_raycast(
+                ox, oy, heading,
+                svx, svy, self.motion_compensate,
+                self.angle_list.astype(np.float32),
+                float(self.range_max),
+                obs_dicts,
+            )
+            if ranges is not None and len(ranges) == self.number:
+                self.range_data[:] = ranges
+                self.radial_velocity[:] = radial_vels
+                self.valid[:] = ranges < self.range_max
+
+                if self.noise or self.velocity_noise_std > 0:
+                    for i in range(self.number):
+                        if self.valid[i]:
+                            if self.noise:
+                                self.range_data[i] += rng.normal(0, self.std)
+                            if self.velocity_noise_std > 0:
+                                self.radial_velocity[i] += rng.normal(
+                                    0, self.velocity_noise_std
+                                )
+                            # Re-check validity after noise
+                            if not (self.range_min <= self.range_data[i] <= self.range_max):
+                                self.valid[i] = False
+                                self.radial_velocity[i] = 0.0
+
+                return True
+        except Exception:
+            pass
+        return False
 
     def _plot(self, ax, state, **kwargs):
         """Plot beams, then color them from radial velocity for visualization."""
