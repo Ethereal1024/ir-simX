@@ -135,6 +135,7 @@ PYBIND11_MODULE(_core, m) {
         .def("check_robot_collision", &SimWorld::check_robot_collision)
         .def("num_robots", &SimWorld::num_robots)
         .def("num_obstacles", &SimWorld::num_obstacles)
+        .def("num_dynamic_obstacles", &SimWorld::num_dynamic_obstacles)
         .def("get_robot_pose", [](SimWorld& w, int id) -> py::tuple {
             const auto& r = w.robot(id);
             return py::make_tuple(r.x, r.y, r.theta);
@@ -144,6 +145,43 @@ PYBIND11_MODULE(_core, m) {
             return py::make_tuple(r.vx, r.vy, r.omega);
         })
         .def("get_robot_collision", &SimWorld::check_robot_collision)
+        .def("get_obstacle_pose", [](SimWorld& w, int id) -> py::tuple {
+            const auto& o = w.dynamic_obstacle(id);
+            return py::make_tuple(o.x, o.y, o.theta);
+        })
+        .def("get_obstacle_velocity", [](SimWorld& w, int id) -> py::tuple {
+            const auto& o = w.dynamic_obstacle(id);
+            return py::make_tuple(o.vx, o.vy, o.omega);
+        })
+        .def("add_dynamic_obstacle", [](SimWorld& w, int kin, float x, float y, float theta,
+                                         float radius,
+                                         py::array_t<float> vel_min = py::array_t<float>(),
+                                         py::array_t<float> vel_max = py::array_t<float>(),
+                                         py::array_t<float> vel_acc = py::array_t<float>()) -> int {
+            float vmin[3] = {-1.0f, -1.0f, -1.0f};
+            float vmax[3] = { 1.0f,  1.0f,  1.0f};
+            float vacc[3] = { 1.0f,  1.0f,  1.0f};
+            if (vel_min.size() > 0) { auto b = vel_min.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vmin[i] = static_cast<const float*>(b.ptr)[i]; }
+            if (vel_max.size() > 0) { auto b = vel_max.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vmax[i] = static_cast<const float*>(b.ptr)[i]; }
+            if (vel_acc.size() > 0) { auto b = vel_acc.request();
+                for (size_t i = 0; i < size_t(b.size) && i < 3; i++)
+                    vacc[i] = static_cast<const float*>(b.ptr)[i]; }
+            return w.add_dynamic_obstacle(static_cast<KinematicsType>(kin), x, y, theta,
+                                          radius, vmin, vmax, vacc);
+        }, py::arg("kinematics"), py::arg("x"), py::arg("y"), py::arg("theta"),
+           py::arg("radius"),
+           py::arg("vel_min") = py::array_t<float>(),
+           py::arg("vel_max") = py::array_t<float>(),
+           py::arg("vel_acc") = py::array_t<float>())
+        .def("step_dynamic_obstacles", [](SimWorld& w,
+                                           py::array_t<float> obs_actions, int action_dim) {
+            auto buf = obs_actions.request();
+            w.step_dynamic_obstacles(static_cast<const float*>(buf.ptr), action_dim);
+        })
         .def("astar", [](SimWorld& w) -> AStarPlanner& { return w.astar(); },
              py::return_value_policy::reference);
 

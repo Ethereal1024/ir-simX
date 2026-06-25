@@ -322,9 +322,11 @@ class EnvBase:
                     flat = verts.flatten().astype(np.float32)
                     w.set_robot_vertices(rid, flat)
 
-        # Add static obstacles
+        # Add all obstacles (static geometry only, or static + dynamic)
+        dyn_obs_map = {}  # obj -> dynamic obstacle id
+
         for obj in self.objects:
-            if obj.role != "obstacle" or obj.unobstructed or not obj.static:
+            if obj.role != "obstacle" or obj.unobstructed:
                 continue
             shape = getattr(obj, "shape", None)
             pos = getattr(obj, "position", None)
@@ -336,14 +338,19 @@ class EnvBase:
             if shape == "circle":
                 if gf is None:
                     continue
+                radius = float(getattr(gf, "radius", 0.5))
                 w.add_obstacle(
                     {
                         "type": "circle",
                         "x": x,
                         "y": y,
-                        "radius": float(getattr(gf, "radius", 0.5)),
+                        "radius": radius,
                     }
                 )
+                if not obj.static and shape == "circle":
+                    did = self._add_dynamic_obstacle_to_cpp(w, obj, x, y, radius, gf)
+                    if did >= 0:
+                        dyn_obs_map[id(obj)] = did
             elif shape == "rectangle":
                 if gf is None:
                     continue
@@ -370,6 +377,14 @@ class EnvBase:
                             "half_h": float(getattr(gf, "half_h", 0.5)),
                         }
                     )
+                if not obj.static:
+                    hw = float(getattr(gf, "half_w", 0.5))
+                    hh = float(getattr(gf, "half_h", 0.5))
+                    did = self._add_dynamic_obstacle_to_cpp(
+                        w, obj, x, y, max(hw, hh), gf
+                    )
+                    if did >= 0:
+                        dyn_obs_map[id(obj)] = did
             elif shape == "polygon":
                 # Polygon obstacle: pass vertices to C++ (supports concave via ear-clip)
                 verts = getattr(obj, "vertices", None)
@@ -388,6 +403,7 @@ class EnvBase:
                 ]
                 for vd in vlist:
                     w.add_obstacle(vd)
+                # Polygon dynamic obstacles are not yet supported in C++
             elif shape == "linestring":
                 # Approximate linestring as thin rect for collision
                 verts = getattr(obj, "vertices", None)
@@ -438,24 +454,50 @@ class EnvBase:
 
         self._cpp_world = w
 
+    def _add_dynamic_obstacle_to_cpp(
+        self, w: Any, obj: Any, x: float, y: float, approx_radius: float, gf: Any
+    ) -> int:
+        """Add a dynamic obstacle to the C++ SimWorld. Returns the dynamic obstacle id."""
+        kin_map = {"diff": 0, "omni": 1, "acker": 2, "omni_angular": 3}
+        kid = kin_map.get(getattr(obj, "kinematics", "diff"), 0)
+        vmin = (
+            getattr(obj, "vel_min", np.array([-1.0, -1.0])).ravel().astype(np.float32)
+        )
+        vmax = getattr(obj, "vel_max", np.array([1.0, 1.0])).ravel().astype(np.float32)
+        info = getattr(obj, "info", None)
+        vacc = (
+            info.acce.ravel().astype(np.float32)
+            if info is not None
+            else np.array([1.0, 1.0], dtype=np.float32)
+        )
+        vmin3 = np.zeros(3, dtype=np.float32)
+        vmin3[: len(vmin)] = vmin
+        vmax3 = np.zeros(3, dtype=np.float32)
+        vmax3[: len(vmax)] = vmax
+        vacc3 = np.zeros(3, dtype=np.float32)
+        vacc3[: len(vacc)] = vacc
+        pos = getattr(obj, "position", None)
+        theta = float(pos[2, 0]) if pos is not None and pos.shape[0] >= 3 else 0.0
+        return w.add_dynamic_obstacle(
+            kid, x, y, theta, approx_radius, vmin3, vmax3, vacc3
+        )
+
     def _c_step_available(self) -> bool:
         """Check if C++ acceleration can handle the current scene."""
         if not HAS_C_CORE or self._cpp_world is None:
             return False
-        # C++ world handles direct-action and simple dash-behavior robots.
-        # Fall back if any robot has special behavior (SFM, RVO, wander)
-        # or the scene has dynamic obstacles.
         for obj in self.objects:
             if obj.role == "robot":
                 beh = getattr(obj, "beh_config", None)
                 if beh is not None:
                     name = beh.get("name", "")
-                    # dash is fine (applies action directly);
-                    # everything else (sfm, rvo, wander, etc.) needs Python
                     if name not in ("", "dash", None):
                         return False
             if obj.role == "obstacle" and not obj.static:
-                return False  # dynamic obstacles not in C++ world
+                shape = getattr(obj, "shape", None)
+                # C++ dynamic obstacles only support circle/rectangle shapes
+                if shape not in ("circle", "rectangle"):
+                    return False
         return not (
             self._cpp_world.num_obstacles() == 0 and self._cpp_world.num_robots() == 0
         )
@@ -500,6 +542,30 @@ class EnvBase:
             w.step(np.array(act_list, dtype=np.float32), 3)
         except Exception:
             return False
+
+        # Step dynamic obstacles: generate behavior velocities, then C++ step
+        obs_act_list = []
+        for obj in self.objects:
+            if obj.role != "obstacle" or obj.static:
+                continue
+            if getattr(obj, "stop_flag", False):
+                padded = np.zeros(3, dtype=np.float32)
+                obs_act_list.extend(padded)
+                continue
+            obj.pre_process()
+            a = obj.gen_behavior_vel(None)
+            if a is None or np.all(a == 0):
+                a = getattr(obj, "_velocity", np.zeros((2, 1)))
+            a = np.asarray(a).ravel()
+            padded = np.zeros(3, dtype=np.float32)
+            padded[: min(len(a), 3)] = a[:3]
+            obs_act_list.extend(padded)
+
+        if obs_act_list:
+            try:
+                w.step_dynamic_obstacles(np.array(obs_act_list, dtype=np.float32), 3)
+            except Exception:
+                return False
 
         # Sync C++ results back to Python objects
         self._sync_cpp_to_python()
@@ -554,6 +620,43 @@ class EnvBase:
                 py_obj.trajectory.append(py_obj.state.copy())
 
             # Update geometry for rendering (mirrors obj.step())
+            if py_obj.gf is not None:
+                py_obj._geometry = py_obj.gf.step(py_obj.state)
+                py_obj._geometry_valid = True
+            py_obj._invalidate_reactive_cache()
+
+        # Sync dynamic obstacle states back to Python objects
+        py_obstacles = [
+            obj for obj in self.objects if obj.role == "obstacle" and not obj.static
+        ]
+        for did in range(min(w.num_dynamic_obstacles(), len(py_obstacles))):
+            py_obj = py_obstacles[did]
+            pose = w.get_obstacle_pose(did)
+            vel = w.get_obstacle_velocity(did)
+
+            state = py_obj.state
+            if state.dtype.kind in ("i", "u"):
+                state = state.astype(np.float64)
+                py_obj._state = state
+            if state.shape[0] >= 3:
+                state[0, 0] = pose[0]
+                state[1, 0] = pose[1]
+                state[2, 0] = pose[2]
+            vel_py = py_obj.velocity
+            if vel_py.dtype.kind in ("i", "u"):
+                vel_py = vel_py.astype(np.float64)
+                py_obj._velocity = vel_py
+            if vel_py.shape[0] >= 2:
+                vel_py[0, 0] = vel[0]
+                vel_py[1, 0] = vel[1] if vel[1] is not None else 0.0
+
+            processed = py_obj.mid_process(py_obj.state.copy())
+            if processed is not None:
+                py_obj._state = processed
+
+            if hasattr(py_obj, "trajectory") and isinstance(py_obj.trajectory, list):
+                py_obj.trajectory.append(py_obj.state.copy())
+
             if py_obj.gf is not None:
                 py_obj._geometry = py_obj.gf.step(py_obj.state)
                 py_obj._geometry_valid = True

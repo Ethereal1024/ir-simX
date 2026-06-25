@@ -57,6 +57,71 @@ int SimWorld::add_polygon_obstacle(const std::vector<Vec2>& verts) {
     return (int)obstacles_.size() - 1;
 }
 
+int SimWorld::add_dynamic_obstacle(KinematicsType kin, float x, float y, float theta,
+                                    float radius,
+                                    const float* vel_min,
+                                    const float* vel_max,
+                                    const float* vel_acc)
+{
+    DynamicObstacle dob;
+    dob.x = x; dob.y = y; dob.theta = theta;
+    dob.kin = kin;
+
+    if (vel_min) for (int i = 0; i < 3; i++) dob.vel_min[i] = vel_min[i];
+    if (vel_max) for (int i = 0; i < 3; i++) dob.vel_max[i] = vel_max[i];
+    if (vel_acc) for (int i = 0; i < 3; i++) dob.vel_acc[i] = vel_acc[i];
+
+    // Add corresponding collision geometry to obstacles_
+    Obstacle obs;
+    obs.type = ShapeType::CIRCLE;
+    obs.center = {x, y};
+    obs.radius = radius;
+    obs.compute_aabb();
+    obstacles_.push_back(obs);
+    dob.obs_index = (int)obstacles_.size() - 1;
+
+    int id = (int)dyn_obstacles_.size();
+    dyn_obstacles_.push_back(dob);
+    return id;
+}
+
+void SimWorld::update_dyn_obs_geometry(int dyn_id) {
+    auto& dob = dyn_obstacles_[dyn_id];
+    auto& obs = obstacles_[dob.obs_index];
+    obs.center = {dob.x, dob.y};
+    obs.compute_aabb();
+}
+
+void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) {
+    for (int i = 0; i < (int)dyn_obstacles_.size(); i++) {
+        auto& dob = dyn_obstacles_[i];
+        const float* act = obs_actions + i * action_dim;
+
+        // Clip action the same way as robots
+        float clipped[3];
+        float cur_vel[3] = {dob.vx, dob.vy, dob.omega};
+        for (int j = 0; j < action_dim && j < 3; j++) {
+            float lo = cur_vel[j] - dob.vel_acc[j] * dt_;
+            float hi = cur_vel[j] + dob.vel_acc[j] * dt_;
+            if (lo < dob.vel_min[j]) lo = dob.vel_min[j];
+            if (hi > dob.vel_max[j]) hi = dob.vel_max[j];
+            float a = act[j];
+            if (a < lo) a = lo;
+            if (a > hi) a = hi;
+            clipped[j] = a;
+        }
+
+        step_kinematics(dob.kin, dob.x, dob.y, dob.theta, clipped, dt_);
+
+        dob.vx = clipped[0];
+        dob.vy = (action_dim >= 2) ? clipped[1] : 0;
+        dob.omega = (action_dim >= 3) ? clipped[2] : (action_dim >= 2 ? clipped[1] : 0);
+
+        // Keep obstacle collision geometry in sync
+        update_dyn_obs_geometry(i);
+    }
+}
+
 // ── Helper: transform robot local vertices to world ────────────
 static void transform_vertices(const Vec2* local, int n,
                                float x, float y, float theta,

@@ -98,6 +98,92 @@ class TestSimWorldObstacles:
 
 
 # =========================================================================
+# SimWorld — dynamic obstacles
+# =========================================================================
+
+
+class TestSimWorldDynamicObstacles:
+    def test_add_dynamic_circle(self):
+        w = _cc.SimWorld()
+        did = w.add_dynamic_obstacle(0, 5.0, 5.0, 0.0, 0.5)
+        assert did == 0
+        assert w.num_dynamic_obstacles() == 1
+        assert w.num_obstacles() == 1  # geometry also added
+
+    def test_get_obstacle_pose(self):
+        w = _cc.SimWorld()
+        w.add_dynamic_obstacle(0, 3.0, 4.0, 1.0, 0.5)
+        px, py, pt = w.get_obstacle_pose(0)
+        assert px == pytest.approx(3.0)
+        assert py == pytest.approx(4.0)
+        assert pt == pytest.approx(1.0)
+
+    def test_get_obstacle_velocity(self):
+        w = _cc.SimWorld()
+        w.add_dynamic_obstacle(0, 0.0, 0.0, 0.0, 0.5)
+        vx, vy, omega = w.get_obstacle_velocity(0)
+        assert vx == pytest.approx(0.0)
+        assert vy == pytest.approx(0.0)
+        assert omega == pytest.approx(0.0)
+
+    def test_step_dynamic_diff_moves(self):
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        w.add_dynamic_obstacle(0, 0.0, 0.0, 0.0, 0.5)
+        # Add a robot to the world too (step requires at least one robot action)
+        w.add_robot(0, 10.0, 10.0, 0.0)
+        robot_actions = np.zeros(3, dtype=np.float32)
+        w.step(robot_actions, 3)
+        # Step the obstacle with v=1, omega=0
+        obs_actions = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        w.step_dynamic_obstacles(obs_actions, 3)
+        px, _py, pt = w.get_obstacle_pose(0)
+        # With accel lim=1, dt=0.1: clipped v = 0.1, dx = 0.1*0.1 = 0.01
+        assert px == pytest.approx(0.01, abs=0.001)
+        assert pt == pytest.approx(0.0, abs=0.001)
+
+    def test_step_dynamic_omni_moves(self):
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        w.add_dynamic_obstacle(1, 0.0, 0.0, 0.0, 0.5)  # kin=1 = OMNI
+        w.add_robot(0, 10.0, 10.0, 0.0)
+        robot_actions = np.zeros(3, dtype=np.float32)
+        w.step(robot_actions, 3)
+        obs_actions = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+        w.step_dynamic_obstacles(obs_actions, 3)
+        _px, py, _pt = w.get_obstacle_pose(0)
+        assert py == pytest.approx(0.01, abs=0.001)
+
+    def test_dynamic_obstacle_collision_geometry_updates(self):
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        w.add_dynamic_obstacle(0, 0.0, 0.0, 0.0, 0.5)
+        w.add_robot(0, 5.0, 5.0, 0.0)
+        robot_actions = np.zeros(3, dtype=np.float32)
+        w.step(robot_actions, 3)
+        obs_actions = np.array([10.0, 0.0, 0.0], dtype=np.float32)
+        # After many steps the obstacle should have moved
+        for _ in range(50):
+            w.step(robot_actions, 3)
+            w.step_dynamic_obstacles(obs_actions, 3)
+        px, _, _ = w.get_obstacle_pose(0)
+        # Should have moved forward (clipped by accel)
+        assert px > 0.1
+
+    def test_multiple_dynamic_obstacles(self):
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        w.add_dynamic_obstacle(0, 0.0, 0.0, 0.0, 0.5)
+        w.add_dynamic_obstacle(0, 5.0, 5.0, 0.0, 0.3)
+        assert w.num_dynamic_obstacles() == 2
+        assert w.num_obstacles() == 2
+        px0, _, _ = w.get_obstacle_pose(0)
+        px1, _, _ = w.get_obstacle_pose(1)
+        assert px0 == pytest.approx(0.0)
+        assert px1 == pytest.approx(5.0)
+
+
+# =========================================================================
 # SimWorld — kinematics stepping
 # =========================================================================
 
