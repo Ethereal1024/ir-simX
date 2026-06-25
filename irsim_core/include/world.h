@@ -39,7 +39,6 @@ struct DynamicObstacle {
     float x = 0, y = 0, theta = 0;
     float vx = 0, vy = 0, omega = 0;
     KinematicsType kin = KinematicsType::DIFF;
-    int obs_index = -1;  // index into obstacles_ for collision geometry
     ShapeType shape_type = ShapeType::CIRCLE;
 
     // For circle
@@ -146,9 +145,6 @@ private:
     int next_id_ = 0;
 
     void update_robot_aabb(RobotState& robot, const Vec2* verts, int n);
-
-    // Update obstacle geometry to match a dynamic obstacle's new position
-    void update_dyn_obs_geometry(int dyn_id);
 
     // Run collision detection for all robots against all obstacles
     void detect_collisions();
