@@ -29,6 +29,8 @@ def run_demo(name: str, yaml_file: str):
     for i in range(200):
         env.step()
         env.render(0.01)
+        if env.done():
+            break
 
     # Print C++ acceleration stats
     w = getattr(env, "_cpp_world", None)

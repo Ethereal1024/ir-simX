@@ -13,7 +13,6 @@ robot:
     goal: [13, 13, 0]
     vel_max: [2, 1]
     goal_threshold: 0.2
-    arrive_mode: stop
     behavior: {name: 'dash'}
     plot:
       show_arrow: True
