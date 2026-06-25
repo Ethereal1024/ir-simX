@@ -274,7 +274,8 @@ void SimWorld::detect_collisions() {
     // Robot collisions (robot vs all obstacles)
     for (auto& r : robots_) {
         r.collision = false;
-        for (const auto& obs : obstacles_) {
+        for (size_t oi = 0; oi < obstacles_.size(); oi++) {
+            const auto& obs = obstacles_[oi];
             if (check_robot_obstacle_collision(
                     r.world_vertices.data(), (int)r.world_vertices.size(), obs))
             {

@@ -341,15 +341,16 @@ class EnvBase:
                 if gf is None:
                     continue
                 radius = float(getattr(gf, "radius", 0.5))
-                w.add_obstacle(
-                    {
-                        "type": "circle",
-                        "x": x,
-                        "y": y,
-                        "radius": radius,
-                    }
-                )
-                if not obj.static and shape == "circle":
+                if obj.static:
+                    w.add_obstacle(
+                        {
+                            "type": "circle",
+                            "x": x,
+                            "y": y,
+                            "radius": radius,
+                        }
+                    )
+                if not obj.static:
                     did = self._add_dynamic_obstacle_to_cpp(w, obj, x, y, "circle", radius)
                     if did >= 0:
                         dyn_obs_map[id(obj)] = did
@@ -357,28 +358,29 @@ class EnvBase:
                 if gf is None:
                     continue
                 verts = getattr(gf, "vertices", None)
-                if verts is not None and verts.shape[1] == 4:
-                    w.add_obstacle(
-                        {
-                            "type": "polygon",
-                            "x": 0,
-                            "y": 0,
-                            "vertices": [
-                                [float(verts[0, i]), float(verts[1, i])]
-                                for i in range(verts.shape[1])
-                            ],
-                        }
-                    )
-                else:
-                    w.add_obstacle(
-                        {
-                            "type": "rect",
-                            "x": x,
-                            "y": y,
-                            "half_w": float(getattr(gf, "half_w", 0.5)),
-                            "half_h": float(getattr(gf, "half_h", 0.5)),
-                        }
-                    )
+                if obj.static:
+                    if verts is not None and verts.shape[1] == 4:
+                        w.add_obstacle(
+                            {
+                                "type": "polygon",
+                                "x": 0,
+                                "y": 0,
+                                "vertices": [
+                                    [float(verts[0, i]), float(verts[1, i])]
+                                    for i in range(verts.shape[1])
+                                ],
+                            }
+                        )
+                    else:
+                        w.add_obstacle(
+                            {
+                                "type": "rect",
+                                "x": x,
+                                "y": y,
+                                "half_w": float(getattr(gf, "half_w", 0.5)),
+                                "half_h": float(getattr(gf, "half_h", 0.5)),
+                            }
+                        )
                 if not obj.static:
                     hw = float(getattr(gf, "half_w", 0.5))
                     hh = float(getattr(gf, "half_h", 0.5))
