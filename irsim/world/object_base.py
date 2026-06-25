@@ -551,6 +551,16 @@ class ObjectBase:
         and 'unobstructed_obstacles'.
         """
         self.check_arrive_status()
+
+        # C++ detection already set collision_flag; skip stale Python STRtree
+        if self.collision_flag:
+            if self._world_param.collision_mode == "stop":
+                self.stop_flag = True
+            if (self._world_param.collision_mode == "unobstructed_obstacles"
+                    and self.role == "robot"):
+                self.stop_flag = True
+            return
+
         self.check_collision_status()
 
         if self._world_param.collision_mode == "stop":
