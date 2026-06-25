@@ -1,0 +1,39 @@
+world:
+  height: 12
+  width: 12
+  step_time: 0.1
+  sample_time: 0.1
+  offset: [0, 0]
+  collision_mode: 'stop'
+
+robot:
+  - kinematics: {name: 'diff'}
+    shape: {name: 'circle', radius: 0.3}
+    state: [1, 1, 0]
+    goal: [10, 10, 0]
+    vel_max: [2, 1]
+    behavior: {name: 'dash'}
+    plot:
+      show_arrow: True
+      show_trajectory: True
+    sensors:
+      - type: 'lidar2d'
+        range_min: 0
+        range_max: 12
+        angle_range: 6.2831853
+        number: 360
+        noise: False
+        alpha: 0.3
+
+obstacle:
+  - number: 5
+    distribution: {name: 'random', range_low: [2, 2, -3.14], range_high: [10, 10, 3.14], non_overlapping: True, min_distance: 2.0}
+    kinematics: {name: 'diff'}
+    behavior: {name: 'dash', wander: True, range_low: [2, 2, -3.14], range_high: [10, 10, 3.14]}
+    shape:
+      - {name: 'rectangle', length: 1.2, width: 0.8}
+    vel_max: [1.5, 1]
+    plot:
+      show_arrow: True
+      arrow_length: 0.6
+      arrow_color: 'orange'
