@@ -138,6 +138,89 @@ bool check_robot_obstacle_collision(
     }
 }
 
+bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b) {
+    // Quick AABB reject
+    if (!a.aabb.overlaps(b.aabb)) return false;
+
+    // Dispatch by shape pair type
+    auto check_circle_circle = [](const Obstacle& ca, const Obstacle& cb) -> bool {
+        float dx = ca.center.x - cb.center.x;
+        float dy = ca.center.y - cb.center.y;
+        float r_sum = ca.radius + cb.radius;
+        return dx * dx + dy * dy <= r_sum * r_sum;
+    };
+
+    auto check_circle_rect = [](const Obstacle& circle, const Obstacle& rect) -> bool {
+        float cx = circle.center.x, cy = circle.center.y;
+        float rx = rect.center.x, ry = rect.center.y;
+        float hw = rect.half_w, hh = rect.half_h;
+        float closest_x = std::max(rx - hw, std::min(cx, rx + hw));
+        float closest_y = std::max(ry - hh, std::min(cy, ry + hh));
+        float dx = cx - closest_x, dy = cy - closest_y;
+        return dx * dx + dy * dy <= circle.radius * circle.radius;
+    };
+
+    auto check_rect_rect = [](const Obstacle& ra, const Obstacle& rb) -> bool {
+        return std::abs(ra.center.x - rb.center.x) <= ra.half_w + rb.half_w &&
+               std::abs(ra.center.y - rb.center.y) <= ra.half_h + rb.half_h;
+    };
+
+    auto obs_to_quad = [](const Obstacle& obs, Vec2* quad) {
+        if (obs.type == ShapeType::CIRCLE) {
+            float r = obs.radius;
+            quad[0] = {obs.center.x - r, obs.center.y - r};
+            quad[1] = {obs.center.x + r, obs.center.y - r};
+            quad[2] = {obs.center.x + r, obs.center.y + r};
+            quad[3] = {obs.center.x - r, obs.center.y + r};
+        } else if (obs.type == ShapeType::RECT) {
+            quad[0] = {obs.center.x - obs.half_w, obs.center.y - obs.half_h};
+            quad[1] = {obs.center.x + obs.half_w, obs.center.y - obs.half_h};
+            quad[2] = {obs.center.x + obs.half_w, obs.center.y + obs.half_h};
+            quad[3] = {obs.center.x - obs.half_w, obs.center.y + obs.half_h};
+        } else if (obs.type == ShapeType::POLYGON && obs.verts) {
+            // Use actual polygon vertices
+            for (int i = 0; i < std::min(obs.n_verts, 64); i++)
+                quad[i] = obs.verts[i];
+        }
+    };
+
+    // Handle pairs that need SAT (polygon involved)
+    auto needs_sat = [](ShapeType t) { return t == ShapeType::POLYGON; };
+
+    if (needs_sat(a.type) || needs_sat(b.type)) {
+        Vec2 va[64], vb[64];
+        int na = std::min(a.n_verts, 64);
+        int nb = std::min(b.n_verts, 64);
+        if (a.type == ShapeType::POLYGON && a.verts) {
+            na = std::min(a.n_verts, 64);
+            for (int i = 0; i < na; i++) va[i] = a.verts[i];
+        } else {
+            na = 4;
+            obs_to_quad(a, va);
+        }
+        if (b.type == ShapeType::POLYGON && b.verts) {
+            nb = std::min(b.n_verts, 64);
+            for (int i = 0; i < nb; i++) vb[i] = b.verts[i];
+        } else {
+            nb = 4;
+            obs_to_quad(b, vb);
+        }
+        return sat_intersect(va, na, vb, nb);
+    }
+
+    // Exact checks for circle/rect pairs
+    if (a.type == ShapeType::CIRCLE && b.type == ShapeType::CIRCLE)
+        return check_circle_circle(a, b);
+    if (a.type == ShapeType::CIRCLE && b.type == ShapeType::RECT)
+        return check_circle_rect(a, b);
+    if (a.type == ShapeType::RECT && b.type == ShapeType::CIRCLE)
+        return check_circle_rect(b, a);
+    if (a.type == ShapeType::RECT && b.type == ShapeType::RECT)
+        return check_rect_rect(a, b);
+
+    return false;
+}
+
 bool batch_collision_check(
     const Vec2* robot_verts, const int* robot_nverts, int n_robots,
     const Obstacle* obstacles, int n_obs)

@@ -304,25 +304,14 @@ void SimWorld::detect_collisions() {
             }
         }
         if (dob.collision) continue;
-        // Check vs other dynamic obstacles (polygon vs shape only)
+        // Check vs other dynamic obstacles (all shape pairs)
         for (auto& other : dyn_obstacles_) {
             if (&dob == &other) continue;
-            const auto& obs_other = obstacles_[other.obs_index];
-            // Use other's vertices as the "robot" polygon for the check
-            if (obs_other.verts && obs_other.n_verts >= 3) {
-                if (check_robot_obstacle_collision(
-                        obs_other.verts, obs_other.n_verts, obs))
-                {
-                    dob.collision = true;
-                    break;
-                }
-            } else if (obs.verts && obs.n_verts >= 3) {
-                if (check_robot_obstacle_collision(
-                        obs.verts, obs.n_verts, obs_other))
-                {
-                    dob.collision = true;
-                    break;
-                }
+            if (check_obstacle_obstacle_collision(
+                    obstacles_[dob.obs_index], obstacles_[other.obs_index]))
+            {
+                dob.collision = true;
+                break;
             }
         }
     }

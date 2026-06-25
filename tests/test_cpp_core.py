@@ -275,6 +275,19 @@ class TestSimWorldDynamicObstacles:
             "Dynamic obstacle should have collision=True when overlapping robot"
         )
 
+    def test_dynamic_obstacle_obstacle_collision(self):
+        """Two dynamic obstacles at same position should collide."""
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        w.add_dynamic_obstacle(0, 5.0, 5.0, 0.0, 0.5)
+        w.add_dynamic_obstacle(0, 5.0, 5.0, 0.0, 0.5)
+        w.add_robot(0, 10.0, 10.0, 0.0)
+        robot_actions = np.zeros(3, dtype=np.float32)
+        w.step(robot_actions, 3)
+        assert w.get_obstacle_collision(0) or w.get_obstacle_collision(1), (
+            "Overlapping dynamic obstacles should collide"
+        )
+
 
 # =========================================================================
 # SimWorld — kinematics stepping

@@ -19,6 +19,9 @@ bool check_robot_obstacle_collision(
     const Vec2* robot_verts, int n_robot,
     const Obstacle& obs);
 
+// General obstacle vs obstacle collision for any shape combination.
+bool check_obstacle_obstacle_collision(const Obstacle& a, const Obstacle& b);
+
 // Batch collision check: returns true if any robot-obstacle pair collides.
 // robot_verts: per-robot vertex arrays (packed flat).
 // robot_nverts: number of vertices per robot.
