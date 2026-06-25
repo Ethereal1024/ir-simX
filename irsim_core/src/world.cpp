@@ -108,6 +108,7 @@ int SimWorld::add_dynamic_rect_obstacle(KinematicsType kin, float x, float y, fl
     obs.center = {x, y};
     obs.half_w = half_w;
     obs.half_h = half_h;
+    obs.theta = theta;
     obs.compute_aabb();
     obstacles_.push_back(obs);
 
@@ -197,6 +198,7 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
             obs.center = {dob.x, dob.y};
         } else if (dob.shape_type == ShapeType::RECT) {
             obs.center = {dob.x, dob.y};
+            obs.theta = dob.theta;
         } else if (dob.shape_type == ShapeType::POLYGON) {
             float dx = dob.x - dob.init_center_x;
             float dy = dob.y - dob.init_center_y;

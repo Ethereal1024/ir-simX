@@ -423,8 +423,8 @@ class EnvBase:
                     vmax3[: len(vmax)] = vmax
                     vacc3 = np.full(3, np.inf, dtype=np.float32)
                     vacc3[: len(vacc)] = vacc
-                    pos = getattr(obj, "position", None)
-                    theta = float(pos[2, 0]) if pos is not None and pos.shape[0] >= 3 else 0.0
+                    s = getattr(obj, "state", None)
+                    theta = float(s[2, 0]) if s is not None and s.shape[0] >= 3 else 0.0
                     did = w.add_dynamic_polygon_obstacle(kid, x, y, theta, vlist_flat, vmin3, vmax3, vacc3)
                     if did >= 0:
                         dyn_obs_map[id(obj)] = did
@@ -507,8 +507,8 @@ class EnvBase:
         vmax3[: len(vmax)] = vmax
         vacc3 = np.full(3, np.inf, dtype=np.float32)
         vacc3[: len(vacc)] = vacc
-        pos = getattr(obj, "position", None)
-        theta = float(pos[2, 0]) if pos is not None and pos.shape[0] >= 3 else 0.0
+        s = getattr(obj, "state", None)
+        theta = float(s[2, 0]) if s is not None and s.shape[0] >= 3 else 0.0
         if shape_name == "rectangle":
             hw = dim1
             hh = dim2 if dim2 is not None else dim1

@@ -65,6 +65,7 @@ struct Obstacle {
     Vec2 center;            // for CIRCLE
     float radius;           // for CIRCLE
     float half_w, half_h;   // for RECT (axis-aligned)
+    float theta = 0;        // rotation for RECT (dynamic obstacles)
     // For POLYGON: vertices are stored externally, use n_verts + get_vert()
     const Vec2* verts = nullptr;
     int n_verts = 0;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cfloat>
+#include <alloca.h>
 
 // ── Helper: project polygon onto axis, return [min, max] ──────
 static void project_polygon(const Vec2* verts, int n, Vec2 axis, float& min, float& max) {
@@ -73,19 +74,42 @@ bool check_robot_obstacle_collision(
     }
     case ShapeType::RECT: {
         // Use SAT for rectangle obstacles (convex, reliable).
+        // If the rect is rotated (theta != 0), rotate robot vertices into rect's
+        // local frame so the axis-aligned check is correct.
+        float c = 1.0f, s = 0.0f;
+        bool rotated = std::abs(obs.theta) > 1e-6f;
+        if (rotated) {
+            c = std::cos(-obs.theta);
+            s = std::sin(-obs.theta);
+        }
+
+        Vec2* check_verts = const_cast<Vec2*>(robot_verts);
+        Vec2* tmp = nullptr;
+        if (rotated) {
+            tmp = (Vec2*)alloca(n_robot * sizeof(Vec2));
+            float cx = obs.center.x, cy = obs.center.y;
+            for (int i = 0; i < n_robot; i++) {
+                float dx = robot_verts[i].x - cx;
+                float dy = robot_verts[i].y - cy;
+                tmp[i].x = cx + dx * c - dy * s;
+                tmp[i].y = cy + dx * s + dy * c;
+            }
+            check_verts = tmp;
+        }
+
         AABB rbox{obs.center - Vec2{obs.half_w, obs.half_h},
                    obs.center + Vec2{obs.half_w, obs.half_h}};
         // Quick check: any robot vertex inside rect?
         for (int i = 0; i < n_robot; i++) {
-            if (robot_verts[i].x >= rbox.min.x && robot_verts[i].x <= rbox.max.x &&
-                robot_verts[i].y >= rbox.min.y && robot_verts[i].y <= rbox.max.y)
+            if (check_verts[i].x >= rbox.min.x && check_verts[i].x <= rbox.max.x &&
+                check_verts[i].y >= rbox.min.y && check_verts[i].y <= rbox.max.y)
                 return true;
         }
         // SAT for edge-edge intersection
         Vec2 rverts[4] = {
             {rbox.min.x, rbox.min.y}, {rbox.max.x, rbox.min.y},
             {rbox.max.x, rbox.max.y}, {rbox.min.x, rbox.max.y}};
-        return sat_intersect(robot_verts, n_robot, rverts, 4);
+        return sat_intersect(check_verts, n_robot, rverts, 4);
     }
     case ShapeType::POLYGON:
         if (obs.verts && obs.n_verts >= 3) {
