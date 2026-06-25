@@ -314,13 +314,14 @@ class EnvBase:
             # Set robot shape vertices for collision (use original_vertices = local frame)
             orig_verts = getattr(obj, "original_vertices", None)
             if orig_verts is not None and orig_verts.shape[1] >= 3:
-                flat = orig_verts.flatten().astype(np.float32)
+                # C++ expects [x0,y0, x1,y1, ...]; transpose from (2,N) row-major
+                flat = orig_verts.T.flatten().astype(np.float32)
                 w.set_robot_vertices(rid, flat)
             else:
                 # Fallback to vertices (may be world-frame, but better than default)
                 verts = getattr(obj, "vertices", None)
                 if verts is not None and verts.shape[1] >= 3:
-                    flat = verts.flatten().astype(np.float32)
+                    flat = verts.T.flatten().astype(np.float32)
                     w.set_robot_vertices(rid, flat)
 
         # Add all obstacles (static geometry only, or static + dynamic)
