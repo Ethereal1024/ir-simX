@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any
 
 import numpy as np
 import shapely
 
-from .map_utils import EnvGridMap, _grid_collision_geometry
+from .map_utils import _grid_collision_geometry
 
 
 class Map:

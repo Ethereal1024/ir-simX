@@ -10,8 +10,9 @@ import irsim
 matplotlib.use("Agg")
 
 from irsim.config import env_param
-from irsim.env.env_plot import EnvPlot, draw_patch
+from irsim.env.env_plot import EnvPlot
 from irsim.env.env_plot3d import EnvPlot3D
+from irsim.env.env_plot_helpers import draw_patch
 from irsim.lib.behavior.behavior import Behavior
 from irsim.lib.handler.geometry_handler import GeometryFactory
 from irsim.lib.path_planners.rrt_star import RRTStar

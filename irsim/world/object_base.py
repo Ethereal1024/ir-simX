@@ -8,14 +8,13 @@ from typing import Any, ClassVar
 import numpy as np
 import shapely
 from shapely.geometry.base import BaseGeometry
-from irsim.env.env_plot import draw_patch, linewidth_from_data_units, set_patch_property
+
 from irsim.lib import Behavior, GeometryFactory, KinematicsFactory
 from irsim.util.util import (
     WrapTo2Pi,
     WrapToPi,
     WrapToRegion,
     check_unknown_kwargs,
-    file_check,
     is_2d_list,
     random_point_range,
     relative_position,

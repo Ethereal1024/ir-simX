@@ -16,9 +16,10 @@ from irsim.util.util import (
     geometry_transform,
     transform_point_with_state,
 )
+from irsim.world.sensors._lidar_cpp import c_step as _c_cpp_step
 
 # C++ accelerated backend (extracted to _lidar_cpp.py)
-from irsim.world.sensors._lidar_cpp import HAS_C_CORE, c_step as _c_cpp_step, map_to_c_dicts, obj_to_c_dict
+from irsim.world.sensors._lidar_cpp import map_to_c_dicts, obj_to_c_dict
 
 if TYPE_CHECKING:
     from irsim.world.object_base import ObjectBase

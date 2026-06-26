@@ -1,6 +1,6 @@
 """Plotting mixin for ObjectBase — all rendering methods."""
 
-from math import cos, pi, sin
+from math import pi
 
 import matplotlib.transforms as mtransforms
 import numpy as np
@@ -9,7 +9,11 @@ from matplotlib.patches import Arrow, Circle, Wedge
 from mpl_toolkits.mplot3d import Axes3D
 
 from irsim.config.path_param import path_manager
-from irsim.env.env_plot import draw_patch, linewidth_from_data_units, set_patch_property
+from irsim.env.env_plot_helpers import (
+    draw_patch,
+    linewidth_from_data_units,
+    set_patch_property,
+)
 from irsim.util.util import file_check
 
 

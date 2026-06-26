@@ -11,9 +11,7 @@ from .obstacle_map import (
     CELL_CENTER_OFFSET,
     COLLISION_RADIUS_FACTOR,
     OCCUPANCY_THRESHOLD,
-    ObstacleMap,
 )
-from .perlin_map_generator import PerlinGridGenerator
 
 # ---------------------------------------------------------------------------
 # Typed protocol - structural contract expected by all path planners

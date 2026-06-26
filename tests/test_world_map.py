@@ -21,7 +21,6 @@ import pytest
 from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry import box
 
-from irsim.world.map.map_utils import _grid_collision_geometry
 from irsim.world.map import (
     GridMapGenerator,
     ImageGridGenerator,
@@ -30,6 +29,7 @@ from irsim.world.map import (
     build_grid_from_generator,
     resolve_obstacle_map,
 )
+from irsim.world.map.map_utils import _grid_collision_geometry
 from irsim.world.map.perlin_map_generator import generate_perlin_noise
 from irsim.world.world import World
 

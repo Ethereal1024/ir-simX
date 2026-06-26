@@ -3,7 +3,6 @@
 from typing import Any
 
 import numpy as np
-import warnings
 
 try:
     import cpp as _cc

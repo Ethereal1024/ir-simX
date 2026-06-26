@@ -12,8 +12,9 @@ import numpy as np
 import pytest
 
 import irsim.env.env_plot as env_plot_module
-from irsim.env.env_plot import EnvPlot, draw_patch
+from irsim.env.env_plot import EnvPlot
 from irsim.env.env_plot3d import EnvPlot3D
+from irsim.env.env_plot_helpers import draw_patch, set_patch_property
 
 
 class TestEnvPlot2D:
@@ -461,7 +462,7 @@ class TestSetPatchProperty:
 
     def test_set_patch_property_fill_and_linewidth(self, dummy_world_2d, dummy_logger):
         """set_patch_property with fill and linewidth kwargs."""
-        from irsim.env.env_plot import draw_patch, set_patch_property
+        from irsim.env.env_plot_helpers import draw_patch
 
         plot = EnvPlot(
             dummy_world_2d,

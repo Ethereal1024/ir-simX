@@ -33,7 +33,6 @@ from irsim.util.util import normalize_actions, to_numpy
 from irsim.world import ObjectBase, ObjectFactory
 
 from ._cpp_sim import CppSim
-
 from .env_logger import EnvLogger
 
 try:

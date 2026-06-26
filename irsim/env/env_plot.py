@@ -15,11 +15,7 @@ from typing import Any
 
 import imageio
 import matplotlib.pyplot as plt
-import matplotlib.transforms as mtransforms
-import mpl_toolkits.mplot3d.art3d as art3d
 import numpy as np
-from matplotlib.lines import Line2D
-from matplotlib.patches import Arrow, Circle, Ellipse, Polygon, Rectangle, Wedge
 from mpl_toolkits.mplot3d import Axes3D
 
 from irsim.config.path_param import path_manager as pm
@@ -622,4 +618,3 @@ class EnvPlot:
         return self.world.y_range
 
 
-from irsim.env.env_plot_helpers import draw_patch, linewidth_from_data_units, set_patch_property  # noqa: E402
