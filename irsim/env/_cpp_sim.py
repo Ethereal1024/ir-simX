@@ -193,21 +193,18 @@ class CppSim:
                         dyn_obs_map[id(obj)] = did
                         obj._cpp_id = did
             elif shape == "linestring":
-                # Approximate linestring as thin rect for collision
                 verts = getattr(obj, "vertices", None)
                 if verts is not None and verts.shape[1] >= 2:
-                    cx = float(np.mean(verts[0, :]))
-                    cy = float(np.mean(verts[1, :]))
-                    half_len = float(np.max(np.abs(verts[0, :] - cx))) * 0.5
-                    w.add_obstacle(
-                        {
-                            "type": "rect",
-                            "x": cx,
-                            "y": cy,
-                            "half_w": max(half_len, 0.05),
-                            "half_h": 0.05,
-                        }
-                    )
+                    if obj.static:
+                        vlist = [
+                            [float(verts[0, i]), float(verts[1, i])]
+                            for i in range(verts.shape[1])
+                        ]
+                        w.add_obstacle({
+                            "type": "linestring",
+                            "x": 0, "y": 0,
+                            "vertices": vlist,
+                        })
                     if not obj.static:
                         did = self._add_dynamic_linestring_obstacle(
                             w, obj, x, y, verts
