@@ -149,14 +149,8 @@ int SimWorld::add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y,
 
     // Store polygon vertices persistently
     dob.local_vertices = verts;
-    dob.init_center_x = 0;
-    dob.init_center_y = 0;
-    for (const auto& v : verts) {
-        dob.init_center_x += v.x;
-        dob.init_center_y += v.y;
-    }
-    dob.init_center_x /= (float)verts.size();
-    dob.init_center_y /= (float)verts.size();
+    dob.init_center_x = x;
+    dob.init_center_y = y;
 
     // Add obstacle geometry to obstacles_
     polygon_vertices_.push_back(verts);
@@ -199,14 +193,8 @@ int SimWorld::add_dynamic_linestring_obstacle(KinematicsType kin, float x, float
 
     // Store linestring vertices persistently
     dob.local_linestring_verts = verts;
-    dob.init_center_x = 0;
-    dob.init_center_y = 0;
-    for (const auto& v : verts) {
-        dob.init_center_x += v.x;
-        dob.init_center_y += v.y;
-    }
-    dob.init_center_x /= (float)verts.size();
-    dob.init_center_y /= (float)verts.size();
+    dob.init_center_x = x;
+    dob.init_center_y = y;
 
     // Add obstacle geometry to obstacles_
     polygon_vertices_.push_back(verts);
