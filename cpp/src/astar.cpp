@@ -15,7 +15,7 @@ void AStarPlanner::set_grid(const uint8_t* data, int w, int h, float res) {
 float AStarPlanner::heuristic(int ax, int ay, int bx, int by) const {
     float dx = float(ax - bx);
     float dy = float(ay - by);
-    return std::sqrt(dx * dx + dy * dy);
+    return std::sqrt(dx * dx + dy * dy) * resolution;
 }
 
 std::vector<float> AStarPlanner::plan(float sx, float sy, float gx, float gy) {

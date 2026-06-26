@@ -63,18 +63,40 @@ class AStarPlanner:
             self.y_width = round((self.max_y - self.origin_y) / self.resolution)
         self.motion = self.get_motion_model()
 
-        # C++ accelerated A* (if grid map and C++ core available)
+        # C++ accelerated A* — always try to build a C++ planner with a grid
         self._c_planner = None
-        if grid is not None:
-            try:
-                from cpp._core import AStarPlanner as _CppAStar
+        try:
+            from cpp._core import AStarPlanner as _CppAStar
 
-                self._c_planner = _CppAStar()
-                cpp_grid = (np.asarray(grid, dtype=np.float64) > 50).astype(np.uint8)
-                self._c_planner.set_grid(cpp_grid, self.x_width, self.y_width,
-                                         self.resolution)
-            except (ImportError, Exception):
-                pass
+            if grid is None:
+                grid = self._build_grid()
+            cpp_grid = (np.asarray(grid, dtype=np.float64) > 50).astype(np.uint8)
+            self._c_planner = _CppAStar()
+            self._c_planner.set_grid(cpp_grid, self.x_width, self.y_width,
+                                     self.resolution)
+        except (ImportError, Exception):
+            pass
+
+    def _build_grid(self) -> np.ndarray:
+        """Build an occupancy grid by sampling each cell via Shapely collision."""
+        grid = np.zeros((self.x_width, self.y_width), dtype=np.float64)
+        half_w = self.resolution * 0.5
+        shape = {"name": "rectangle", "length": self.resolution,
+                 "width": self.resolution}
+        gf = self._make_geometry_factory(shape)
+        for gi in range(self.x_width):
+            wx = self.origin_x + (gi + 0.5) * self.resolution
+            for gj in range(self.y_width):
+                wy = self.origin_y + (gj + 0.5) * self.resolution
+                geometry = gf.step(np.c_[[wx, wy]])
+                if self._map.is_collision(geometry):
+                    grid[gi, gj] = 100
+        return grid
+
+    @staticmethod
+    def _make_geometry_factory(shape: dict):
+        from irsim.lib.handler.geometry_handler import GeometryFactory
+        return GeometryFactory.create_geometry(**shape)
 
     class Node:
         """Node class"""
@@ -136,6 +158,13 @@ class AStarPlanner:
                 path_2d[:, 0] += self.origin_x
                 path_2d[:, 1] += self.origin_y
                 return path_2d.T
+
+        sx = float(to_numpy(start_pose)[0].item())
+        sy = float(to_numpy(start_pose)[1].item())
+        gx = float(to_numpy(goal_pose)[0].item())
+        gy = float(to_numpy(goal_pose)[1].item())
+        if self.check_node(sx, sy) or self.check_node(gx, gy):
+            return np.array([[], []])
 
         start_node = self.Node(
             self.calc_xy_index(float(to_numpy(start_pose)[0].item()), self.origin_x),
