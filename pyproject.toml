@@ -7,12 +7,12 @@ requires = ["setuptools>=61.0",
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ir-simX"
-version = "2.10.0"
+name = "irsim-x"
+version = "3.0.0"
 authors = [
   { name="Han Ruihua", email="hanrh@connect.hku.hk" },
 ]
-description = "IR-SIM with C++ accelerated LiDAR, collision detection, and kinematics (~1000x faster)"
+description = "IR-SIM with C++ accelerated LiDAR, collision detection, and kinematics"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -81,7 +81,7 @@ dev = [
 
 
 [tool.setuptools.packages.find]
-include = ["irsim*"]
+include = ["irsim*", "cpp*"]
 exclude = ["docs*", "tests*"]
 
 [tool.setuptools.package-data]
