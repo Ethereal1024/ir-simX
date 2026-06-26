@@ -251,26 +251,32 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
             if (dob.poly_verts_index == SIZE_MAX) continue;
             float dx = dob.x - dob.init_center_x;
             float dy = dob.y - dob.init_center_y;
+            float c = std::cos(dob.theta), s = std::sin(dob.theta);
             auto& pv = polygon_vertices_[dob.poly_verts_index];
             pv.resize(dob.local_vertices.size());
             obs.verts = pv.data();
             obs.n_verts = (int)dob.local_vertices.size();
             for (size_t vi = 0; vi < dob.local_vertices.size(); vi++) {
-                pv[vi].x = dob.local_vertices[vi].x + dx;
-                pv[vi].y = dob.local_vertices[vi].y + dy;
+                float rx = dob.local_vertices[vi].x - dob.init_center_x;
+                float ry = dob.local_vertices[vi].y - dob.init_center_y;
+                pv[vi].x = dob.x + rx * c - ry * s;
+                pv[vi].y = dob.y + rx * s + ry * c;
             }
             obs.center = {dob.x, dob.y};
         } else if (dob.shape_type == ShapeType::LINESTRING) {
             if (dob.poly_verts_index == SIZE_MAX) continue;
             float dx = dob.x - dob.init_center_x;
             float dy = dob.y - dob.init_center_y;
+            float c = std::cos(dob.theta), s = std::sin(dob.theta);
             auto& pv = polygon_vertices_[dob.poly_verts_index];
             pv.resize(dob.local_linestring_verts.size());
             obs.verts = pv.data();
             obs.n_verts = (int)dob.local_linestring_verts.size();
             for (size_t vi = 0; vi < dob.local_linestring_verts.size(); vi++) {
-                pv[vi].x = dob.local_linestring_verts[vi].x + dx;
-                pv[vi].y = dob.local_linestring_verts[vi].y + dy;
+                float rx = dob.local_linestring_verts[vi].x - dob.init_center_x;
+                float ry = dob.local_linestring_verts[vi].y - dob.init_center_y;
+                pv[vi].x = dob.x + rx * c - ry * s;
+                pv[vi].y = dob.y + rx * s + ry * c;
             }
         }
         obs.compute_aabb();

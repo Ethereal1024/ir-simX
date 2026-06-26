@@ -132,21 +132,11 @@ class CppSim:
                                 ],
                             }
                         )
-                    else:
-                        w.add_obstacle(
-                            {
-                                "type": "rect",
-                                "x": x,
-                                "y": y,
-                                "half_w": float(getattr(gf, "half_w", 0.5)),
-                                "half_h": float(getattr(gf, "half_h", 0.5)),
-                            }
-                        )
                 if not obj.static:
-                    hw = float(getattr(gf, "half_w", 0.5))
-                    hh = float(getattr(gf, "half_h", 0.5))
+                    length = float(getattr(gf, "length", 1.0))
+                    width = float(getattr(gf, "width", 1.0))
                     did = self._add_dynamic_obstacle(
-                        w, obj, x, y, "rectangle", hw, hh
+                        w, obj, x, y, "rectangle", length / 2, width / 2
                     )
                     if did >= 0:
                         dyn_obs_map[id(obj)] = did
