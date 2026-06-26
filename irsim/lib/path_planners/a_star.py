@@ -63,6 +63,19 @@ class AStarPlanner:
             self.y_width = round((self.max_y - self.origin_y) / self.resolution)
         self.motion = self.get_motion_model()
 
+        # C++ accelerated A* (if grid map and C++ core available)
+        self._c_planner = None
+        if grid is not None:
+            try:
+                from cpp._core import AStarPlanner as _CppAStar
+
+                self._c_planner = _CppAStar()
+                cpp_grid = (np.asarray(grid, dtype=np.float64) > 50).astype(np.uint8)
+                self._c_planner.set_grid(cpp_grid, self.x_width, self.y_width,
+                                         self.resolution)
+            except (ImportError, Exception):
+                pass
+
     class Node:
         """Node class"""
 
@@ -111,6 +124,19 @@ class AStarPlanner:
         Returns:
             (np.array): xy position array of the final path
         """
+        # ── C++ accelerated path (no animation, grid map available) ──
+        if self._c_planner is not None and not show_animation:
+            sx = float(to_numpy(start_pose)[0].item()) - self.origin_x
+            sy = float(to_numpy(start_pose)[1].item()) - self.origin_y
+            gx = float(to_numpy(goal_pose)[0].item()) - self.origin_x
+            gy = float(to_numpy(goal_pose)[1].item()) - self.origin_y
+            cpp_path = self._c_planner.plan(sx, sy, gx, gy)
+            if len(cpp_path) > 0:
+                path_2d = cpp_path.reshape(-1, 2)
+                path_2d[:, 0] += self.origin_x
+                path_2d[:, 1] += self.origin_y
+                return path_2d.T
+
         start_node = self.Node(
             self.calc_xy_index(float(to_numpy(start_pose)[0].item()), self.origin_x),
             self.calc_xy_index(float(to_numpy(start_pose)[1].item()), self.origin_y),
