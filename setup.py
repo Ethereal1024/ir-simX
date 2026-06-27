@@ -1,6 +1,11 @@
-from setuptools import setup, Extension
+import glob
+import os
+import site as _site
+import subprocess
+import tempfile
+
 import pybind11
-import os, subprocess, tempfile, glob, site as _site
+from setuptools import Extension, setup
 
 # ── Clean stale C extensions from site-packages ─────────────────
 # Editable install (pip install -e .) does NOT remove old .so files
@@ -49,6 +54,10 @@ ext_modules = [
             "cpp/src/kinematics.cpp",
             "cpp/src/astar.cpp",
             "cpp/src/world.cpp",
+            "cpp/src/batch_world.cpp",
+            "cpp/src/batch_kinematics.cpp",
+            "cpp/src/batch_lidar.cpp",
+            "cpp/src/batch_collision.cpp",
             "cpp/bindings/pybind_module.cpp",
         ],
         include_dirs=[

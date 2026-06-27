@@ -18,6 +18,12 @@ except ImportError:
 
 from irsim.env import EnvBase, EnvBase3D
 
+try:
+    from irsim.env.batch_env_base import BatchEnvBase
+    _HAS_BATCH = True
+except ImportError:
+    _HAS_BATCH = False
+
 from .version import __version__
 
 
@@ -53,9 +59,25 @@ class _EnvFactory:
         self,
         world_name: str | None = None,
         projection: str | None = None,
+        batch_size: int = 1,
+        share_obstacles: bool = True,
         **kwargs: Any,
     ) -> EnvBase:
         resolved_world = self._resolve_world_name(world_name)
+
+        if batch_size > 1:
+            if not _HAS_BATCH:
+                raise ImportError(
+                    "BatchEnvBase requires compiled C++ core with BatchSimWorld.\n"
+                    "Run: pip install -e ."
+                )
+            return BatchEnvBase(
+                resolved_world,
+                batch_size=batch_size,
+                share_obstacles=share_obstacles,
+                **kwargs,
+            )
+
         options: dict[str, Any] = {**self.default_kwargs, **kwargs}
         key = (projection or self.default_projection or "2d").strip().lower()
         try:
@@ -71,13 +93,20 @@ _env_factory = _EnvFactory()
 
 
 def make(
-    world_name: str | None = None, projection: str | None = None, **kwargs: Any
+    world_name: str | None = None,
+    projection: str | None = None,
+    batch_size: int = 1,
+    share_obstacles: bool = True,
+    **kwargs: Any,
 ) -> EnvBase:
     """
     Create an environment by the given world file and projection.
 
     This function serves as the main entry point for creating simulation environments.
     It automatically selects between 2D and 3D environments based on the projection parameter.
+
+    When ``batch_size > 1``, returns a :py:class:`.BatchEnvBase` that wraps
+    N identical environments with a shared C++ SIMD backend.
 
     Args:
         world_name (str, optional): The name of the world YAML configuration file.
@@ -86,6 +115,12 @@ def make(
         projection (str, optional): The projection type of the environment.
             Default is None for 2D environment. If set to "3d", creates a 3D
             plot environment.
+        batch_size (int, optional): Number of parallel environments (default 1).
+            When >1, the C++ BatchSimWorld backend is used with SoA layout
+            and SIMD acceleration across environments.
+        share_obstacles (bool, optional): If True (default), all environments
+            share the same obstacle set, enabling cross-environment SIMD LiDAR.
+            If False, each environment has its own obstacle set (mode B).
         **kwargs: Additional keyword arguments passed to :py:class:`.EnvBase`
             or :py:class:`.EnvBase3D`. Common options include:
 
@@ -96,17 +131,24 @@ def make(
               to make runs reproducible when using IR-SIM randomness.
 
     Returns:
-        EnvBase: The created environment object. Returns :py:class:`.EnvBase3D`
-        if projection is "3d", otherwise returns :py:class:`.EnvBase`.
+        EnvBase: The created environment object. Returns :py:class:`.BatchEnvBase`
+        if ``batch_size > 1``, :py:class:`.EnvBase3D` if projection is "3d",
+        otherwise :py:class:`.EnvBase`.
 
     Example:
         >>> # Create a 2D environment with default world file
         >>> env = make()
         >>>
-        >>> # Create a 3D environment with custom world file
-        >>> env = make("my_world.yaml", projection="3d")
+        >>> # Create a batch of 16 environments (shared obstacles, SIMD LiDAR)
+        >>> env = make("world.yaml", batch_size=16)
         >>>
-        >>> # Create environment with additional options
-        >>> env = make("world.yaml", display=True, save_ani=False)
+        >>> # Batch with per-environment obstacles (mode B, scalar LiDAR fallback)
+        >>> env = make("world.yaml", batch_size=16, share_obstacles=False)
     """
-    return _env_factory.create(world_name=world_name, projection=projection, **kwargs)
+    return _env_factory.create(
+        world_name=world_name,
+        projection=projection,
+        batch_size=batch_size,
+        share_obstacles=share_obstacles,
+        **kwargs,
+    )

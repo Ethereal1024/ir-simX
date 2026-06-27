@@ -1,4 +1,5 @@
 import contextlib
+import re
 import time
 from math import pi
 from unittest.mock import Mock, patch
@@ -21,11 +22,6 @@ from irsim.util.util import (
     is_list_of_lists,
     time_it2,
 )
-
-with contextlib.suppress(ImportError):
-    from pynput import keyboard
-
-import re
 
 
 @pytest.fixture(autouse=True)
@@ -122,7 +118,7 @@ def test_collision_avoidance():
 
     for i in range(20):
         env.step()
-        env._objects_step([np.array([1, 0]).reshape(2, 1)])
+        env._object_step([np.array([1, 0]).reshape(2, 1)])
 
         env.robot.get_desired_omni_vel()
 
@@ -278,6 +274,7 @@ def test_grid_map():
 
 def test_keyboard_control():
     """Test keyboard control"""
+    keyboard = pytest.importorskip("pynput.keyboard")
     env = irsim.make("test_keyboard_control.yaml", save_ani=False, display=False)
     key_list = ["w", "a", "s", "d", "q", "e", "z", "c", "r", "l", "v", "x"]
     mock_keys = [Mock(spec=keyboard.Key, char=c) for c in key_list]

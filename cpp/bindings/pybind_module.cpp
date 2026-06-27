@@ -2,6 +2,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 #include "world.h"
+#include "batch_world.h"
 #include "astar.h"
 #include <cstdint>
 #include <cstring>
@@ -420,8 +421,112 @@ PYBIND11_MODULE(_core, m) {
         return py::make_tuple(x, y, theta);
     });
     m.def("step_acker", [](float x, float y, float theta, float steer_angle,
-                            float v, float desired_steer, float dt, float wheelbase) -> py::tuple {
+                             float v, float desired_steer, float dt, float wheelbase) -> py::tuple {
         step_acker(x, y, theta, steer_angle, v, desired_steer, dt, wheelbase);
         return py::make_tuple(x, y, theta, steer_angle);
     });
+
+    // ── BatchConfig (must register before BatchSimWorld) ────────
+    py::class_<BatchConfig>(m, "BatchConfig")
+        .def(py::init<>())
+        .def_readwrite("batch_size", &BatchConfig::batch_size)
+        .def_readwrite("share_obstacles", &BatchConfig::share_obstacles);
+
+    // ── BatchSimWorld ──────────────────────────────────────────
+    py::class_<BatchSimWorld>(m, "BatchSimWorld")
+        .def(py::init<BatchConfig>())
+        .def("set_step_time", &BatchSimWorld::set_step_time)
+        .def("step_time", &BatchSimWorld::step_time)
+        .def("batch_size", &BatchSimWorld::batch_size)
+        .def("set_robot_kinematics", [](BatchSimWorld& w, int kin) {
+            w.set_robot_kinematics(static_cast<KinematicsType>(kin));
+        })
+        .def("set_robot_vertices", [](BatchSimWorld& w, py::array_t<float> verts) {
+            auto buf = verts.request();
+            int n = (int)buf.size / 2;
+            w.set_robot_vertices(static_cast<const float*>(buf.ptr), n);
+        })
+        .def("set_robot_limits", [](BatchSimWorld& w,
+                                     py::array_t<float> vel_min,
+                                     py::array_t<float> vel_max,
+                                     py::array_t<float> vel_acc) {
+            auto b_min = vel_min.request();
+            auto b_max = vel_max.request();
+            auto b_acc = vel_acc.request();
+            w.set_robot_limits(
+                static_cast<const float*>(b_min.ptr),
+                static_cast<const float*>(b_max.ptr),
+                static_cast<const float*>(b_acc.ptr));
+        })
+        .def("set_initial_poses", [](BatchSimWorld& w, py::array_t<float> poses) {
+            auto buf = poses.request();
+            w.set_initial_poses(static_cast<const float*>(buf.ptr));
+        })
+        .def("add_obstacle", [](BatchSimWorld& w, py::dict obs_dict) {
+            std::string type = obs_dict["type"].cast<std::string>();
+            Obstacle obs;
+            if (type == "circle") {
+                obs.type = ShapeType::CIRCLE;
+                obs.center = {obs_dict["x"].cast<float>(), obs_dict["y"].cast<float>()};
+                obs.radius = obs_dict["radius"].cast<float>();
+                obs.compute_aabb();
+            } else if (type == "rect") {
+                obs.type = ShapeType::RECT;
+                obs.center = {obs_dict["x"].cast<float>(), obs_dict["y"].cast<float>()};
+                obs.half_w = obs_dict["half_w"].cast<float>();
+                obs.half_h = obs_dict["half_h"].cast<float>();
+                obs.compute_aabb();
+            } else if (type == "polygon") {
+                obs.type = ShapeType::POLYGON;
+                auto vlist = obs_dict["vertices"].cast<py::list>();
+                obs.n_verts = (int)vlist.size();
+                // Note: for batch mode with shared obstacles, polygons
+                // should use the persistent storage in SimWorld.
+                // For simplicity, we skip polygon obstacles in batch mode.
+                return;
+            } else if (type == "linestring") {
+                obs.type = ShapeType::LINESTRING;
+                auto vlist = obs_dict["vertices"].cast<py::list>();
+                obs.n_verts = (int)vlist.size();
+                return;  // not yet supported in batch mode
+            }
+            w.add_obstacle(obs);
+        })
+        .def("step", [](BatchSimWorld& w, py::array_t<float> actions, int action_dim) {
+            auto buf = actions.request();
+            w.step(static_cast<const float*>(buf.ptr), action_dim);
+        })
+        .def("batch_raycast", [](BatchSimWorld& w,
+                                  py::array_t<float> angles, float range_max) -> py::array_t<float> {
+            auto buf = angles.request();
+            int n_beams = (int)buf.size;
+            int bs = w.alloc_size();
+            auto result = py::array_t<float>(n_beams * bs);
+            auto res_buf = result.request();
+            w.batch_raycast(static_cast<const float*>(buf.ptr), n_beams, range_max,
+                            static_cast<float*>(res_buf.ptr));
+            return result;
+        })
+        .def("get_all_poses", [](BatchSimWorld& w) -> py::array_t<float> {
+            int bs = w.batch_size();
+            auto result = py::array_t<float>(bs * 3);
+            auto buf = result.request();
+            w.get_all_poses(static_cast<float*>(buf.ptr));
+            return result;
+        })
+        .def("get_all_velocities", [](BatchSimWorld& w) -> py::array_t<float> {
+            int bs = w.batch_size();
+            auto result = py::array_t<float>(bs * 3);
+            auto buf = result.request();
+            w.get_all_velocities(static_cast<float*>(buf.ptr));
+            return result;
+        })
+        .def("get_all_collisions", [](BatchSimWorld& w) -> py::array_t<float> {
+            int bs = w.batch_size();
+            auto result = py::array_t<float>(bs);
+            auto buf = result.request();
+            w.get_all_collisions(static_cast<float*>(buf.ptr));
+            return result;
+        });
+
 }

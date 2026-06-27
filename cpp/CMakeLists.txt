@@ -53,6 +53,10 @@ set(CORE_SOURCES
     src/kinematics.cpp
     src/astar.cpp
     src/world.cpp
+    src/batch_world.cpp
+    src/batch_kinematics.cpp
+    src/batch_lidar.cpp
+    src/batch_collision.cpp
 )
 
 set(CORE_HEADERS
@@ -62,6 +66,8 @@ set(CORE_HEADERS
     include/kinematics.h
     include/astar.h
     include/world.h
+    include/simd_config.h
+    include/batch_world.h
 )
 
 # ── pybind11 module ─────────────────────────────────────────────

@@ -7,7 +7,9 @@ Each demo runs for 200 steps in a window, then prints C++ stats.
 """
 
 import sys
+
 import matplotlib
+
 matplotlib.use("TkAgg")
 
 DEMOS = {
@@ -35,7 +37,7 @@ def run_demo(name: str, yaml_file: str):
     # Print C++ acceleration stats
     w = getattr(env, "_cpp_world", None)
     if w is not None:
-        print(f"  C++ SimWorld active:     YES")
+        print("  C++ SimWorld active:     YES")
         print(f"  Robots:                  {w.num_robots()}")
         print(f"  Dynamic obstacles:       {w.num_dynamic_obstacles()}")
         print(f"  Total obstacles:         {w.num_obstacles()}")
