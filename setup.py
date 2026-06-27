@@ -44,7 +44,26 @@ if has_avx2:
     cpp_args.extend(["-mavx2", "-mfma", "-DUSE_AVX2"])
     print("cpp: AVX2 enabled")
 
+# OpenMP
+omp_available = False
+try:
+    with tempfile.NamedTemporaryFile(suffix='.c', mode='w', delete=False) as f:
+        f.write('#include <omp.h>\nint main(){return 0;}\n'); f.flush()
+        result = subprocess.run(
+            [os.environ.get('CC', 'gcc'), '-fopenmp', f.name, '-o', '/dev/null'],
+            capture_output=True)
+        omp_available = result.returncode == 0
+        os.unlink(f.name)
+except: pass
+if omp_available:
+    cpp_args.append("-fopenmp")
+    print("cpp: OpenMP enabled")
+
 # ── C++ extension ──────────────────────────────────────────────
+link_args = []
+if omp_available:
+    link_args.append("-fopenmp")
+
 ext_modules = [
     Extension(
         "cpp._core",
@@ -65,6 +84,7 @@ ext_modules = [
             "cpp/include",
         ],
         extra_compile_args=cpp_args,
+        extra_link_args=link_args,
         language="c++",
     ),
 ]

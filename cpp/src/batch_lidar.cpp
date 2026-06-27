@@ -218,6 +218,7 @@ void batch_lidar_raycast_shared(BatchSimWorld& world,
 
     int bs = world.batch_size();
 
+    #pragma omp parallel for schedule(static, 4)
     for (int b = 0; b < n_beams; b++) {
         float* beam_out = ranges_out + b * world.alloc_size();
         float ca = cos_angles[b];

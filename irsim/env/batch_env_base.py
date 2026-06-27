@@ -1,161 +1,191 @@
-"""BatchEnvBase — multi-environment batch simulation with shared C++ backend."""
+"""BatchEnvBase — multi-environment batch simulation without EnvBase instances."""
 
 from __future__ import annotations
 
 from typing import Any
-
 import numpy as np
-
-from irsim.env.env_base import EnvBase
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 from ._batch_cpp_sim import BatchCppSim
 
+_KIN_MAP = {"diff": 0, "omni": 1, "acker": 2, "omni_angular": 3}
+
+
+def _rect_vertices(length: float, width: float) -> np.ndarray:
+    """Return (2, 4) vertex array for a rectangle centered at origin."""
+    hl, hw = length / 2, width / 2
+    return np.array([[-hl,  hl,  hl, -hl],
+                     [-hw, -hw,  hw,  hw]], dtype=np.float32)
+
+
+def _robot_config_from_yaml(yaml_path: str) -> dict:
+    """Parse YAML and extract robot + lidar config without creating EnvBase."""
+    with open(yaml_path) as f:
+        cfg = yaml.safe_load(f)
+
+    robot_cfg = cfg.get("robot", {})
+    kin_name = robot_cfg.get("kinematics", {}).get("name", "diff")
+    kin = _KIN_MAP.get(kin_name, 0)
+
+    shape = robot_cfg.get("shape", {})
+    shape_name = shape.get("name", "circle")
+    if shape_name == "rectangle":
+        length = float(shape.get("length", 0.32))
+        width = float(shape.get("width", 0.24))
+        vertex_array = _rect_vertices(length, width).ravel()
+    elif shape_name == "circle":
+        radius = float(shape.get("radius", 0.2))
+        # Approximate circle as octagon
+        nv = 8
+        angles = np.linspace(0, 2 * np.pi, nv, endpoint=False)
+        verts = np.stack([np.cos(angles) * radius, np.sin(angles) * radius], axis=0)
+        vertex_array = verts.ravel()
+    else:
+        vertex_array = _rect_vertices(0.32, 0.24).ravel()
+
+    vel_min = np.array(robot_cfg.get("vel_min", [-0.5, -1.0, -2.0]), dtype=np.float32)
+    vel_max = np.array(robot_cfg.get("vel_max", [3.0, 1.0, 2.0]), dtype=np.float32)
+    vel_acc = np.full(3, 100.0, dtype=np.float32)  # default high acceleration
+
+    state = robot_cfg.get("state", [0, 0, 0])
+
+    # LiDAR config from sensors
+    sensors = robot_cfg.get("sensors", [])
+    lidar_cfg = {}
+    for s in sensors:
+        if s.get("name") in ("lidar2d", "fmcw_lidar2d"):
+            n_beams = int(s.get("number", 1200))
+            angle_range = float(s.get("angle_range", 4.7124))
+            range_max = float(s.get("range_max", 30.0))
+            angle_list = np.linspace(-angle_range / 2, angle_range / 2, n_beams, dtype=np.float32)
+            lidar_cfg = dict(
+                n_beams=n_beams, angle_range=angle_range,
+                range_max=range_max, angle_list=angle_list,
+            )
+            break
+
+    world = cfg.get("world", {})
+    step_time = float(world.get("step_time", 0.1))
+
+    return {
+        "kinematics": kin,
+        "vel_min": vel_min,
+        "vel_max": vel_max,
+        "vel_acc": vel_acc,
+        "vertex_array": vertex_array,
+        "step_time": step_time,
+        "initial_state": state,
+        "lidar": lidar_cfg,
+    }
+
 
 class BatchEnvBase:
-    """Batch simulation environment wrapping N identical EnvBase instances.
+    """Batch simulation environment backed purely by C++ BatchSimWorld.
 
-    Public methods mirror EnvBase but operate on batched numpy arrays
-    with an extra leading dimension ``(batch_size, ...)``.
-
-    When ``batch_size == 1``, shapes are ``(1, ...)`` so downstream code
-    can uniformly index ``result[0]`` to obtain single-environment data.
+    No EnvBase instances are created. Robot configuration is parsed directly
+    from YAML. All state is managed in C++ SoA arrays.
     """
 
     def __init__(
         self,
         yaml_path: str,
         batch_size: int = 1,
-        display: bool = False,
-        seed: int | None = None,
         share_obstacles: bool = True,
-        **kwargs: Any,
     ):
         self._batch_size = batch_size
-        self._share_obstacles = share_obstacles
+        self._yaml_config = _robot_config_from_yaml(yaml_path)
+        self._lidar_cfg = self._yaml_config.get("lidar", {})
+        self._step_time = self._yaml_config["step_time"]
 
-        # Create N environments, each with display=False (batch = headless)
-        self._envs: list[EnvBase] = []
-        for i in range(batch_size):
-            env_seed = seed + i if seed is not None else None
-            env = EnvBase(yaml_path, display=False, seed=env_seed, **kwargs)
-            self._envs.append(env)
+        # Create batch C++ world with all robots at default positions
+        self._batch_cpp = BatchCppSim(batch_size)
+        self._build()
 
-        # Replace per-env CppSim with a single BatchCppSim
-        self._batch_cpp = BatchCppSim(self._envs, share_obstacles=share_obstacles)
-        self._batch_cpp.build()
+    def _build(self) -> None:
+        config = dict(self._yaml_config)
+        # All robots start at the initial state
+        init_state = config["initial_state"]
+        poses = np.tile(init_state, (self._batch_size, 1)).astype(np.float32)
+        config["poses"] = poses
+        self._batch_cpp.build(config)
 
-        # Pre-compute common attributes from the master robot's lidar
-        master = self._envs[0]
-        robot = master.robot
-        self._angle_list = (
-            robot.lidar.angle_list
-            if robot and robot.lidar
-            else np.array([], dtype=np.float32)
-        )
-        self._range_max = robot.lidar.range_max if robot and robot.lidar else 10.0
-        self._action_dim = getattr(robot, "vel_dim", 2)
+    def rebuild(self) -> None:
+        """Clear all obstacles from C++ world (preserves robot config)."""
+        # Store current poses before rebuilding
+        old_poses = self._batch_cpp.poses.copy() if self._batch_cpp.poses is not None else None
+        self._build()
+        if old_poses is not None:
+            self._batch_cpp.set_poses(old_poses)
+
+    def add_obstacle(self, obs_dict: dict) -> None:
+        self._batch_cpp.add_obstacle(obs_dict)
+
+    def step(self, action: np.ndarray) -> None:
+        self._batch_cpp.step(action)
+
+    def get_lidar_scan(self) -> np.ndarray:
+        lidar = self._lidar_cfg
+        if not lidar:
+            return np.zeros((self._batch_size, 0), dtype=np.float32)
+        return self._batch_cpp.batch_raycast(lidar["angle_list"], lidar["range_max"])
+
+    def get_robot_state(self) -> np.ndarray:
+        """Returns (batch_size, 3, 1) robot poses."""
+        poses = self._batch_cpp.poses
+        return poses[:, :, np.newaxis]
+
+    def set_poses(self, poses: np.ndarray) -> None:
+        """Set all robot poses from (batch, 3) array."""
+        self._batch_cpp.set_poses(poses)
+
+    # ── Batch C++ bridge access ────────────────────────────────
+
+    @property
+    def batch_cpp(self) -> BatchCppSim:
+        return self._batch_cpp
 
     @property
     def batch_size(self) -> int:
         return self._batch_size
 
-    # ── Step ─────────────────────────────────────────────────────
-
-    def step(
-        self, action: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
-        """Advance simulation by one step.
-
-        Args:
-            action: (batch_size, action_dim) or (action_dim,) — latter broadcast
-                    to (1, action_dim) for single-env convenience.
-
-        Returns:
-            (lidar, reward, done, info) where:
-                lidar:  (batch_size, n_beams)
-                reward: (batch_size,)
-                done:   (batch_size,) bool
-        """
-        action = np.asarray(action, dtype=np.float32)
-        if action.ndim == 1:
-            action = action[np.newaxis, :]
-        assert action.shape[0] == self._batch_size, (
-            f"Expected batch_size={self._batch_size}, got {action.shape[0]}"
-        )
-
-        self._batch_cpp.step(action)
-
-        lidar = self.get_lidar_scan()
-        reward = self._compute_rewards()
-        done = self._check_done()
-
-        return lidar, reward, done, {}
-
-    # ── Observations ────────────────────────────────────────────
-
-    def get_lidar_scan(self) -> np.ndarray:
-        """Returns (batch_size, n_beams) LiDAR scan."""
-        return self._batch_cpp.batch_raycast(self._angle_list, self._range_max)
-
-    def get_robot_state(self) -> np.ndarray:
-        """Returns (batch_size, 3, 1) robot pose [x, y, theta]."""
-        w = self._batch_cpp._w
-        if w is None:
-            return np.zeros((self._batch_size, 3, 1), dtype=np.float32)
-        poses = w.get_all_poses().reshape(self._batch_size, 3)
-        return poses[:, :, np.newaxis]
-
-    # ── Rewards / Done ──────────────────────────────────────────
-
-    def _compute_rewards(self) -> np.ndarray:
-        rewards = np.zeros(self._batch_size, dtype=np.float32)
-        for i in range(len(self._envs)):
-            rewards[i] = 0.0  # TODO: per-env reward function
-        return rewards
-
-    def _check_done(self) -> np.ndarray:
-        done = np.zeros(self._batch_size, dtype=bool)
-        for i, env in enumerate(self._envs):
-            done[i] = env.done()
-        return done
-
-    def done(self) -> bool:
-        """True if ALL environments are done (for backward compat)."""
-        return all(env.done() for env in self._envs)
-
-    # ── Reset ───────────────────────────────────────────────────
-
-    def reset(self) -> None:
-        """Reset all environments."""
-        for env in self._envs:
-            # Re-read YAML config for each env (same yaml, different seed)
-            env.reset()
-        self._batch_cpp.build()
-
-    # ── Properties (delegated to master env) ────────────────────
+    # ── Properties for backward-compat API usage ───────────────
 
     @property
-    def world(self):
-        return self._envs[0].world if self._envs else None
+    def angle_list(self) -> np.ndarray:
+        return self._lidar_cfg.get("angle_list", np.array([], dtype=np.float32))
 
     @property
-    def objects(self):
-        """Returns objects from master env (all envs share the same structure)."""
-        return self._envs[0].objects if self._envs else []
-
-    @property
-    def angle_list(self):
-        return self._angle_list
+    def world_param(self):
+        from irsim.config.world_param import WorldParam
+        wp = WorldParam()
+        wp.step_time = self._step_time
+        return wp
 
     @property
     def robot(self):
-        return self._envs[0].robot if self._envs else None
+        """Minimal robot object for generator compatibility."""
+        from types import SimpleNamespace
+        rect_v = self._yaml_config["vertex_array"]
+        nv = len(rect_v) // 2
+        verts = rect_v.reshape(2, nv)
+        radius = float(np.max(np.linalg.norm(verts, axis=0)))
+        # state as (3, 1) column vector
+        init = self._yaml_config["initial_state"]
+        state_arr = np.array(init, dtype=np.float64).reshape(3, 1)
+        return SimpleNamespace(
+            radius=radius,
+            state=state_arr,
+        )
 
-    @property
-    def action_dim(self):
-        return self._action_dim
+    def get_map(self, resolution: float = 0.1) -> Any:
+        """Build a Map from C++ obstacle data for path planning."""
+        # Return a simple map object for generator compatibility
+        return None
 
-    def render(self, *args: Any, **kwargs: Any) -> None:
-        """Render the master environment (batch rendering unsupported)."""
-        if self._envs:
-            self._envs[0].render(*args, **kwargs)
+    # ── Close ──────────────────────────────────────────────────
+
+    def close(self) -> None:
+        self._batch_cpp._w = None

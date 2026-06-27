@@ -477,18 +477,23 @@ PYBIND11_MODULE(_core, m) {
                 obs.half_h = obs_dict["half_h"].cast<float>();
                 obs.compute_aabb();
             } else if (type == "polygon") {
-                obs.type = ShapeType::POLYGON;
                 auto vlist = obs_dict["vertices"].cast<py::list>();
-                obs.n_verts = (int)vlist.size();
-                // Note: for batch mode with shared obstacles, polygons
-                // should use the persistent storage in SimWorld.
-                // For simplicity, we skip polygon obstacles in batch mode.
+                std::vector<Vec2> verts;
+                for (auto item : vlist) {
+                    auto pt = item.cast<py::list>();
+                    verts.push_back({pt[0].cast<float>(), pt[1].cast<float>()});
+                }
+                w.add_polygon_obstacle(verts);
                 return;
             } else if (type == "linestring") {
-                obs.type = ShapeType::LINESTRING;
                 auto vlist = obs_dict["vertices"].cast<py::list>();
-                obs.n_verts = (int)vlist.size();
-                return;  // not yet supported in batch mode
+                std::vector<Vec2> verts;
+                for (auto item : vlist) {
+                    auto pt = item.cast<py::list>();
+                    verts.push_back({pt[0].cast<float>(), pt[1].cast<float>()});
+                }
+                w.add_linestring_obstacle(verts);
+                return;
             }
             w.add_obstacle(obs);
         })

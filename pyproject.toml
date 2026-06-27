@@ -8,9 +8,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "irsim-x"
-version = "1.0.0"
+version = "1.1.2"
 authors = [
   { name="Han Ruihua", email="hanrh@connect.hku.hk" },
+  { name="Fanshu", email="fanshu1024@163.com" },
 ]
 description = "IR-SIM with C++ accelerated LiDAR, collision detection, and kinematics"
 readme = "README.md"
@@ -27,7 +28,8 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
 ]
 dependencies = [
     'matplotlib',
@@ -75,8 +77,7 @@ test = [
 dev = [
     {include-group = "lint"},
     {include-group = "test"},
-    "pre-commit==4.6.0",
-    "ty>=0.0.1a17",
+    "pre-commit>=4.6.0",
 ]
 
 
@@ -141,9 +142,3 @@ exclude_dirs = ["tests", "docs", ".venv"]
 #   B311 blacklist        - PRNG is for simulation sampling, not cryptography
 #   B110 try_except_pass  - intentional best-effort cleanup paths
 skips = ["B101", "B311", "B110"]
-
-[project.urls]
-"Homepage" = "https://github.com/{username}/ir-simX"
-"Documentation" = "https://github.com/{username}/ir-simX"
-"Repository" = "https://github.com/{username}/ir-simX"
-"Issues" = "https://github.com/{username}/ir-simX/issues"

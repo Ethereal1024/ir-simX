@@ -3,6 +3,7 @@
 #include "geometry.h"
 #include "collision.h"
 #include "kinematics.h"
+#include <deque>
 #include <vector>
 #include <cstring>
 #include <cfloat>
@@ -43,6 +44,11 @@ public:
 
     int num_obstacles() const;
     int num_obstacles_per_env(int env_id) const;
+
+    // Polygon and linestring obstacles (vertex data persisted internally)
+    void add_polygon_obstacle(const std::vector<Vec2>& verts);
+    void add_linestring_obstacle(const std::vector<Vec2>& verts);
+    const std::deque<std::vector<Vec2>>& polygon_vertices() const { return polygon_vertices_; }
 
     // ── Step ──
     // actions: flat array [action_dim * batch_size]
@@ -132,6 +138,7 @@ private:
     bool share_obstacles_ = true;
     std::vector<Obstacle> obstacles_;                     // mode A: shared
     std::vector<std::vector<Obstacle>> per_env_obstacles_; // mode B
+    std::deque<std::vector<Vec2>> polygon_vertices_;      // persistent vertex storage
 
     // ── State tracking ───────────────────────────────────────
     std::vector<bool> collision_flags_;

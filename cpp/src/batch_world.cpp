@@ -101,6 +101,32 @@ void BatchSimWorld::add_obstacle(const Obstacle& obs) {
     }
 }
 
+void BatchSimWorld::add_polygon_obstacle(const std::vector<Vec2>& verts) {
+    if (!share_obstacles_) return;
+    polygon_vertices_.push_back(verts);
+    Obstacle o;
+    o.type = ShapeType::POLYGON;
+    o.n_verts = (int)verts.size();
+    o.verts = polygon_vertices_.back().data();
+    o.center = {0, 0};
+    for (const auto& v : verts) { o.center.x += v.x; o.center.y += v.y; }
+    o.center.x /= verts.size();
+    o.center.y /= verts.size();
+    o.compute_aabb();
+    obstacles_.push_back(o);
+}
+
+void BatchSimWorld::add_linestring_obstacle(const std::vector<Vec2>& verts) {
+    if (!share_obstacles_ || verts.size() < 2) return;
+    polygon_vertices_.push_back(verts);
+    Obstacle o;
+    o.type = ShapeType::LINESTRING;
+    o.n_verts = (int)verts.size();
+    o.verts = polygon_vertices_.back().data();
+    o.compute_aabb();
+    obstacles_.push_back(o);
+}
+
 void BatchSimWorld::add_obstacle_per_env(int env_id, const Obstacle& obs) {
     if (!share_obstacles_ && env_id >= 0 && env_id < cfg_.batch_size) {
         per_env_obstacles_[env_id].push_back(obs);
@@ -150,15 +176,15 @@ void BatchSimWorld::compute_aabb_scalar(int env_id, AABB& out) const {
     }
 }
 
-// ── Step ────────────────────────────────────────────────────────
+// ── Step (OpenMP + SIMD) ───────────────────────────────────────
 
 void BatchSimWorld::step(const float* actions, int action_dim) {
     int bs = cfg_.batch_size;
 
-    // 1. Clip actions (SIMD)
+    // 1. Clip actions (SIMD per-chunk, sequentially for now)
     batch_clip_actions(*this, actions, action_dim, 0, bs);
 
-    // 2. Step kinematics (SIMD dispatch)
+    // 2. Step kinematics (SIMD per-chunk, sequentially for now)
     switch (kin_type_) {
     case KinematicsType::DIFF:
         batch_step_diff(*this, 0, bs);
@@ -174,20 +200,59 @@ void BatchSimWorld::step(const float* actions, int action_dim) {
         break;
     }
 
-    // 3. Update trig arrays
-    update_trig_arrays(0, bs);
+    // 3. Update trig arrays (OpenMP parallel for)
+    #pragma omp parallel for schedule(static, 64)
+    for (int i = 0; i < bs; i++) {
+        cos_theta_[i] = std::cos(theta_[i]);
+        sin_theta_[i] = std::sin(theta_[i]);
+    }
 
-    // 4. Find world vertices (skip if no vertices set)
+    // 4. Find world vertices (OpenMP parallel for)
     if (n_verts_ > 0) {
+        #pragma omp parallel for schedule(static, 8)
         for (int i = 0; i < bs; i++) {
             find_world_vertices_scalar(i);
         }
     }
 
-    // 5. Detect collisions (skip if no vertices)
+    // 5. Detect collisions (OpenMP parallel over environments)
     collision_flags_.assign(bs, false);
     if (n_verts_ > 0) {
-        batch_detect_collisions(*this);
+        const auto& obstacles = obstacles_;
+        int n_obs = share_obstacles_ ? (int)obstacles.size() : 0;
+
+        if (share_obstacles_ && n_obs > 0) {
+            #pragma omp parallel for schedule(dynamic, 32)
+            for (int i = 0; i < bs; i++) {
+                AABB env_aabb;
+                compute_aabb_scalar(i, env_aabb);
+                for (int j = 0; j < n_obs; j++) {
+                    if (!env_aabb.overlaps(obstacles[j].aabb)) continue;
+                    const auto& wv = world_vertices_[i];
+                    if (check_robot_obstacle_collision(
+                            wv.data(), n_verts_, obstacles[j])) {
+                        collision_flags_[i] = true;
+                        break;
+                    }
+                }
+            }
+        } else if (!share_obstacles_) {
+            #pragma omp parallel for schedule(dynamic, 32)
+            for (int i = 0; i < bs; i++) {
+                const auto& env_obs = per_env_obstacles_[i];
+                const auto& wv = world_vertices_[i];
+                for (const auto& obs : env_obs) {
+                    AABB env_aabb;
+                    compute_aabb_scalar(i, env_aabb);
+                    if (!env_aabb.overlaps(obs.aabb)) continue;
+                    if (check_robot_obstacle_collision(
+                            wv.data(), n_verts_, obs)) {
+                        collision_flags_[i] = true;
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 

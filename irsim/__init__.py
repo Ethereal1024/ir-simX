@@ -75,7 +75,6 @@ class _EnvFactory:
                 resolved_world,
                 batch_size=batch_size,
                 share_obstacles=share_obstacles,
-                **kwargs,
             )
 
         options: dict[str, Any] = {**self.default_kwargs, **kwargs}
