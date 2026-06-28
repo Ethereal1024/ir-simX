@@ -163,12 +163,16 @@ public:
 
     const std::deque<std::vector<Vec2>>& polygon_vertices() const { return polygon_vertices_; }
 
+    // Rebuild LiDAR spatial hash grid (call after obstacle changes)
+    void rebuild_lidar_grid();
+
 private:
     float dt_ = 0.1f;
     std::vector<RobotState> robots_;
     std::vector<DynamicObstacle> dyn_obstacles_;
     std::vector<Obstacle> obstacles_;
     std::deque<std::vector<Vec2>> polygon_vertices_;  // persistent storage (deque: no reallocation on push)
+    SpatialHashGrid lidar_grid_;
     AStarPlanner astar_;
     int next_id_ = 0;
 

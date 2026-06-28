@@ -1,14 +1,63 @@
 #pragma once
 #include "geometry.h"
 #include <cstdint>
+#include <vector>
+#include <algorithm>
+
+// ═══════════════════════════════════════════════════════════════
+//  SpatialHashGrid — spatial grid for accelerating ray
+//  intersection queries for all obstacle types.
+//
+//  All obstacle shapes are binned into grid cells by AABB.
+//  DDA ray traversal visits only cells the ray passes through,
+//  enabling early termination at O(√N) instead of O(N).
+// ═══════════════════════════════════════════════════════════════
+
+struct GridShape {
+    ShapeType type;
+    // CIRCLE
+    Vec2 center;
+    float radius;
+    // RECT
+    float half_w, half_h;
+    AABB aabb;
+    // SEGMENT (from polygon/linestring edges)
+    Vec2 a, b;
+};
+
+class SpatialHashGrid {
+public:
+    static constexpr float DEFAULT_CELL_SIZE = 0.5f;
+
+    SpatialHashGrid() = default;
+
+    // Build from obstacle list.  All shape types are indexed.
+    void build(const Obstacle* obstacles, int n_obs);
+
+    // Raycast: returns nearest intersection distance (limit if no hit).
+    float raycast(Vec2 o, Vec2 d, float limit) const;
+
+    bool empty() const { return shapes_.empty(); }
+    int num_circle_rect() const { return n_circle_ + n_rect_; }
+
+private:
+    float cell_size_ = DEFAULT_CELL_SIZE;
+    int nx_ = 0, ny_ = 0;
+    float ox_ = 0, oy_ = 0;
+    float ow_ = 0, oh_ = 0;
+
+    std::vector<GridShape> shapes_;
+    std::vector<std::vector<int>> cells_;  // cells_[y * nx + x] → shape indices
+    int n_circle_ = 0, n_rect_ = 0;
+
+    void insert_shape(int shape_idx, const AABB& shape_aabb);
+};
 
 // ═══════════════════════════════════════════════════════════════
 //  LiDAR raycasting — scalar and SIMD accelerated
 // ═══════════════════════════════════════════════════════════════
 
 // Scalar raycast: for each beam, test all obstacles, keep nearest hit.
-// angles: array of n_beams angles in radians (relative to robot heading)
-// ranges_out: output array, filled with hit distances (range_max if no hit)
 void lidar_raycast_scalar(
     Vec2 origin, float heading,
     const float* angles, int n_beams, float range_max,
@@ -17,12 +66,16 @@ void lidar_raycast_scalar(
 
 // AVX2 batch raycast: process 8 beams at once using SIMD.
 // Accelerates CIRCLE (quadratic solve) and RECT (AABB slab test).
-// Falls back to scalar for other shape types.
+// Uses SpatialHashGrid for POLYGON/LINESTRING obstacles.
+// When grid covers CIRCLE/RECT (i.e. built with all shapes),
+// the grid is queried for all obstacles; otherwise per-obstacle
+// SIMD is used for CIRCLE/RECT and grid for polygon/linestring.
 void lidar_raycast_avx2(
     Vec2 origin, float heading,
     const float* angles, int n_beams, float range_max,
     const Obstacle* obstacles, int n_obs,
-    float* ranges_out);
+    float* ranges_out,
+    const SpatialHashGrid* grid = nullptr);
 
 // FMCW AVX2 variant: same SIMD intersection + per-beam best obstacle
 // index tracking for radial velocity computation.
@@ -43,11 +96,6 @@ void lidar_raycast(
     float* ranges_out);
 
 // FMCW LiDAR raycast: returns ranges + per-beam radial velocity.
-// sensor_vx, sensor_vy: velocity of the sensor (robot) in world frame.
-// motion_compensate: if true, use obstacle world velocity directly;
-//   if false, subtract sensor velocity (relative velocity in sensor frame).
-// velocities_out: radial velocity per beam (dot(rel_vel, beam_dir)).
-//   Set to 0 for beams with no hit.
 void fmcw_lidar_raycast(
     Vec2 origin, float heading,
     float sensor_vx, float sensor_vy,

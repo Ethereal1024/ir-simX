@@ -3,6 +3,7 @@
 #include "geometry.h"
 #include "collision.h"
 #include "kinematics.h"
+#include "lidar.h"
 #include <deque>
 #include <vector>
 #include <cstring>
@@ -107,6 +108,8 @@ public:
     float dt() const { return dt_; }
     bool collision(int i) const { return collision_flags_[i]; }
     void set_collision(int i, bool val) { collision_flags_[i] = val; }
+    void rebuild_lidar_grid();
+    const SpatialHashGrid& lidar_grid() const { return lidar_grid_; }
 
 private:
     BatchConfig cfg_;
@@ -143,6 +146,9 @@ private:
     // ── State tracking ───────────────────────────────────────
     std::vector<bool> collision_flags_;
     std::vector<float> steer_angles_;  // for ACKER kinematics
+
+    // ── Spatial hash grid ────────────────────────────────────
+    SpatialHashGrid lidar_grid_;
 
     // ── Internal helpers ──
     int simd_round_up(int n) const;

@@ -140,30 +140,50 @@ static void batch_beam_avx2(BatchSimWorld& world,
             t = _mm256_max_ps(zero, tmin);
             t = _mm256_blendv_ps(_mm256_set1_ps(range_max), t, hit);
 
-        } else {
-            // POLYGON / LINESTRING: scalar fallback per env
-            _mm256_storeu_ps(ranges_out + start, best);
+        }
+        // POLYGON / LINESTRING handled by SpatialHashGrid below
+    }
+
+    // Phase 2: grid query for poly/linestring obstacles
+    {
+        _mm256_storeu_ps(ranges_out + start, best);
+        const auto& obstacles = world.obstacles();
+        const auto& lg = world.lidar_grid();
+        if (!lg.empty()) {
             for (int ei = 0; ei < n; ei++) {
                 int env_idx = start + ei;
-                float ox_f = world.x_data()[env_idx];
-                float oy_f = world.y_data()[env_idx];
-                float h_f = world.theta_data()[env_idx];
                 float cur_best = ranges_out[env_idx];
+                Vec2 o_f{world.x_data()[env_idx], world.y_data()[env_idx]};
+                float h_f = world.theta_data()[env_idx];
                 float ddx = cos_angle * std::cos(h_f) - sin_angle * std::sin(h_f);
                 float ddy = cos_angle * std::sin(h_f) + sin_angle * std::cos(h_f);
-                Vec2 o_f{ox_f, oy_f};
                 Vec2 d_f{ddx, ddy};
-                float t_f;
-                if (intersect_ray_obstacle(o_f, d_f, obs, t_f)) {
-                    if (t_f < cur_best) ranges_out[env_idx] = t_f;
+                float t_f = lg.raycast(o_f, d_f, cur_best);
+                if (t_f < cur_best) ranges_out[env_idx] = t_f;
+            }
+        } else {
+            // No grid — scalar fallback per obstacle
+            for (int j = 0; j < (int)obstacles.size(); j++) {
+                const auto& obs = obstacles[j];
+                if (obs.type == ShapeType::CIRCLE || obs.type == ShapeType::RECT) continue;
+                for (int ei = 0; ei < n; ei++) {
+                    int env_idx = start + ei;
+                    float cur_best = ranges_out[env_idx];
+                    float ox_f = world.x_data()[env_idx];
+                    float oy_f = world.y_data()[env_idx];
+                    float h_f = world.theta_data()[env_idx];
+                    float ddx = cos_angle * std::cos(h_f) - sin_angle * std::sin(h_f);
+                    float ddy = cos_angle * std::sin(h_f) + sin_angle * std::cos(h_f);
+                    Vec2 o_f{ox_f, oy_f};
+                    Vec2 d_f{ddx, ddy};
+                    float t_f;
+                    if (intersect_ray_obstacle(o_f, d_f, obs, t_f)) {
+                        if (t_f < cur_best) ranges_out[env_idx] = t_f;
+                    }
                 }
             }
-            best = _mm256_loadu_ps(ranges_out + start);
-            continue;
         }
-
-        __m256 cmp = _mm256_cmp_ps(t, best, _CMP_LT_OQ);
-        best = _mm256_blendv_ps(best, t, cmp);
+        best = _mm256_loadu_ps(ranges_out + start);
     }
 
     _mm256_storeu_ps(ranges_out + start, best);

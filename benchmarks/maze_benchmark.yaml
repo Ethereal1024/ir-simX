@@ -1,0 +1,20 @@
+world:
+  height: 10
+  width: 10
+  step_time: 0.1
+  collision_mode: stop
+  control_mode: auto
+
+robot:
+  kinematics: {name: omni_angular}
+  shape: {name: rectangle, length: 0.32, width: 0.24}
+  state: [1.5, 1.5, 0]
+  vel_min: [-1.0, -1.0, -2.0]
+  vel_max: [1.0, 1.0, 2.0]
+  color: b
+  sensors:
+    - name: lidar2d
+      range_min: 0
+      range_max: 15.0
+      angle_range: 4.7124
+      number: 1200

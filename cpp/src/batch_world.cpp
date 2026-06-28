@@ -98,6 +98,7 @@ void BatchSimWorld::set_initial_poses(const float* poses) {
 void BatchSimWorld::add_obstacle(const Obstacle& obs) {
     if (share_obstacles_) {
         obstacles_.push_back(obs);
+        rebuild_lidar_grid();
     }
 }
 
@@ -257,6 +258,10 @@ void BatchSimWorld::step(const float* actions, int action_dim) {
 }
 
 // ── LiDAR ───────────────────────────────────────────────────────
+
+void BatchSimWorld::rebuild_lidar_grid() {
+    lidar_grid_.build(obstacles_.data(), (int)obstacles_.size());
+}
 
 void BatchSimWorld::batch_raycast(const float* angles, int n_beams,
                                    float range_max, float* ranges_out) {

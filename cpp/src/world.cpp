@@ -38,6 +38,7 @@ int SimWorld::add_obstacle(const Obstacle& obs) {
     }
     o.compute_aabb();
     obstacles_.push_back(o);
+    rebuild_lidar_grid();
     return (int)obstacles_.size() - 1;
 }
 
@@ -55,6 +56,7 @@ int SimWorld::add_polygon_obstacle(const std::vector<Vec2>& verts) {
     o.center.y /= verts.size();
     o.compute_aabb();
     obstacles_.push_back(o);
+    rebuild_lidar_grid();
     return (int)obstacles_.size() - 1;
 }
 
@@ -400,9 +402,20 @@ void SimWorld::raycast(int robot_id,
     const auto& r = robots_[robot_id];
     Vec2 origin{r.x, r.y};
 
-    lidar_raycast(origin, r.theta, angles, n_beams, range_max,
-                  obstacles_.data(), (int)obstacles_.size(),
-                  ranges_out);
+#ifdef USE_AVX2
+    lidar_raycast_avx2(origin, r.theta, angles, n_beams, range_max,
+                       obstacles_.data(), (int)obstacles_.size(),
+                       ranges_out,
+                       lidar_grid_.empty() ? nullptr : &lidar_grid_);
+#else
+    lidar_raycast_scalar(origin, r.theta, angles, n_beams, range_max,
+                         obstacles_.data(), (int)obstacles_.size(),
+                         ranges_out);
+#endif
+}
+
+void SimWorld::rebuild_lidar_grid() {
+    lidar_grid_.build(obstacles_.data(), (int)obstacles_.size());
 }
 
 bool SimWorld::check_robot_collision(int robot_id) {
