@@ -211,7 +211,7 @@ Sparse 的 Python dict 构建开销从 81% 降到 ~0%（通过 `SimWorld::raycas
 - [x] **P2: `_cpp_sim.py` 改用 `w.raycast_at()`** — 替代 `_objects_sensor_step()`，对 LiDAR 类型跳过 dict 构建
 - [x] **P3: 动态障碍物位置同步** — `step_dynamic_obstacles` 中同步 `obs.vx/vy` 和到 `obstacles_`；运动后重建 `lidar_grid_`
 - [x] **P4: FMCW LiDAR 接入** — `SimWorld::fmcw_raycast_at` 直接调用 `fmcw_lidar_raycast`，跳过 Python dict 序列化
-- [ ] **P5: 批量环境的对应优化** — BatchSimWorld 中 `batch_raycast` 已直接使用 `obstacles_`，需验证一致性
+- [x] **P5: 批量环境的对应优化** — BatchSimWorld 中 `batch_raycast` 已直接使用 `obstacles_`，已验证一致
 - [ ] **S4: `env_plot.py` 绘制方法提取** — `draw_trajectory`、`draw_points` 等为 mixin 或 helper（~144 行）
 - [ ] **S5: `env_plot.py` 导出方法提取** — `save_figure` + `save_animate` → `env_plot_exporter.py`（~115 行）
 - [ ] **S6: `object_base.py` 工具函数提取** — `get_desired_omni_vel`、`get_init_Gh` 等纯计算函数（~100 行）
