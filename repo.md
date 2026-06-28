@@ -158,16 +158,19 @@ cpp/                         # C++ pybind11 扩展
 | 迷宫 251 segs（SpatialHashGrid） | 1200 | 189 µs | 5,291 | 网格 DDA |
 | 500 rects（SpatialHashGrid） | 1200 | 124 µs | 8,064 | 网格 DDA |
 
-### 四种地图 benchmark（SpatialHashGrid + 快速 sensor 路径）
+### 四种地图 benchmark（优化最终版）
 
 | Map | Obs | Segs | env.step(ms) | FPS | 瓶颈 |
 |-----|-----|------|-------------|-----|------|
-| Sparse | 62 | 211 | **0.140** | **7,158** | C++ LiDAR |
-| Maze | 2 | 98 | **0.290** | **3,452** | C++ LiDAR |
-| Graph | 8 | 53 | **0.148** | **6,736** | C++ LiDAR |
+| Sparse | 62 | 211 | **0.133** | **7,506** | Python 调用开销 |
+| Maze | 2 | 98 | **0.290** | **3,448** | C++ LiDAR |
+| Graph | 8 | 53 | **0.148** | **6,755** | C++ LiDAR |
 | WFC_warehouse | 6 | 126 | **0.577** | **1,732** | C++ LiDAR |
 
-Sparse 的 Python dict 构建开销从 81% 降到 ~0%（通过 `SimWorld::raycast_at` 直接使用 C++ obstacle 数组），加速 **8.2×**。
+优化历程：
+1. **SpatialHashGrid 统一四种类型** — LiDAR 从 O(N) 变为 O(√N)，500 rects 从 ~15ms 降至 0.125ms
+2. **绕过 Python dict 序列化** — `SimWorld::raycast_at` 直接使用 C++ obstacles_，Sparse 从 1.15ms 降至 0.14ms（8.2×）
+3. **FMCW + 动态障碍物支持** — 完整的 fast path，per-robot 独立 fallback
 
 ## 开发计划
 
