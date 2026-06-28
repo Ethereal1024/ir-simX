@@ -180,7 +180,27 @@ PYBIND11_MODULE(_core, m) {
                          static_cast<float*>(res_buf.ptr));
             return result;
         })
+        .def("fmcw_raycast_at", [](SimWorld& w,
+                                    float ox, float oy, float heading,
+                                    float svx, float svy,
+                                    bool motion_compensate,
+                                    py::array_t<float> angles,
+                                    float range_max) -> py::tuple
+        {
+            auto buf = angles.request();
+            int n = (int)buf.size;
+            auto ranges = py::array_t<float>(n);
+            auto velos = py::array_t<float>(n);
+            auto range_buf = ranges.request();
+            auto velo_buf = velos.request();
+            w.fmcw_raycast_at({ox, oy}, heading, svx, svy, motion_compensate,
+                              static_cast<const float*>(buf.ptr), n, range_max,
+                              static_cast<float*>(range_buf.ptr),
+                              static_cast<float*>(velo_buf.ptr));
+            return py::make_tuple(ranges, velos);
+        })
         .def("check_robot_collision", &SimWorld::check_robot_collision)
+        .def("rebuild_lidar_grid", &SimWorld::rebuild_lidar_grid)
         .def("num_robots", &SimWorld::num_robots)
         .def("num_obstacles", &SimWorld::num_obstacles)
         .def("num_dynamic_obstacles", &SimWorld::num_dynamic_obstacles)

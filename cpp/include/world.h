@@ -142,6 +142,13 @@ public:
                     const float* angles, int n_beams, float range_max,
                     float* ranges_out);
 
+    // FMCW LiDAR: cast with per-beam radial velocity
+    void fmcw_raycast_at(Vec2 origin, float heading,
+                          float sensor_vx, float sensor_vy,
+                          bool motion_compensate,
+                          const float* angles, int n_beams, float range_max,
+                          float* ranges_out, float* velocities_out);
+
     // Collision check for a specific robot
     bool check_robot_collision(int robot_id);
 

@@ -243,7 +243,9 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
         dob.vy = (action_dim >= 2) ? clipped[1] : 0;
         dob.omega = (action_dim >= 3) ? clipped[2] : (action_dim >= 2 ? clipped[1] : 0);
 
-        // Keep obstacle collision geometry in sync via stored obs_index
+        // Keep obstacle collision geometry + velocity in sync
+        obs.vx = dob.vx;
+        obs.vy = dob.vy;
         if (dob.shape_type == ShapeType::CIRCLE) {
             obs.center = {dob.x, dob.y};
         } else if (dob.shape_type == ShapeType::RECT) {
@@ -428,6 +430,18 @@ void SimWorld::raycast_at(Vec2 origin, float heading,
                          obstacles_.data(), (int)obstacles_.size(),
                          ranges_out);
 #endif
+}
+
+void SimWorld::fmcw_raycast_at(Vec2 origin, float heading,
+                                float sensor_vx, float sensor_vy,
+                                bool motion_compensate,
+                                const float* angles, int n_beams, float range_max,
+                                float* ranges_out, float* velocities_out)
+{
+    fmcw_lidar_raycast(origin, heading, sensor_vx, sensor_vy, motion_compensate,
+                       angles, n_beams, range_max,
+                       obstacles_.data(), (int)obstacles_.size(),
+                       ranges_out, velocities_out);
 }
 
 void SimWorld::rebuild_lidar_grid() {
