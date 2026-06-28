@@ -1,15 +1,53 @@
 # Changelog
 
-## 2.10.1 (unreleased)
-
-- Features:
-  - Add C++ accelerated FMCW LiDAR raycasting via `fmcw_lidar_raycast`, reusing the same ray-intersection engine as `lidar2d` and computing per-beam radial velocity in C++. (`([#PR]())`)
+## x-1.1.2 (2026-06-28)
 
 - Fix:
-  - Suppress the default velocity arrow on static obstacles by gating the handler-derived `show_arrow` on `not self.static` (regression from v2.9.2's kinematics-handler registry refactor). ([#313](https://github.com/hanruihua/ir-sim/pull/313))
+  - **Dynamic polygon/linestring double-rotation bug**: store `init_theta` in `DynamicObstacle` and use `delta_theta` for vertex rotation in `step_dynamic_obstacles`, fixing C++ vs Python lidar position mismatch (max diff reduced from 11.6 m to 0.000 m).
+  - Cyrus-Beck missing `has_exit` check causing false-positive intersection for polygons.
+  - Segment intersection false positive in SpatialHashGrid grid traversal.
+  - Missing `rebuild_lidar_grid()` call in `add_linestring_obstacle`.
+  - Rotated rectangle orientation in LiDAR raycast and collision detection.
+  - Per-robot fallback handling in fast sensor step.
+
+- Perf:
+  - Restore `CR_SIMD_THRESHOLD=50` for small CIRCLE/RECT count SIMD optimization.
+  - Add OpenMP parallel for kinematics dispatch in batch_world.
+  - FMCW fast path and dynamic obstacle sync for direct LiDAR.
+  - Bypass Python dict serialization in LiDAR sensor step (`SimWorld::raycast_at`).
+  - Add `SpatialHashGrid` for O(√N) LiDAR ray intersection.
+
+- Batch SIMD:
+  - `BatchSimWorld` with SoA layout, SIMD kinematics, SIMD LiDAR (mode A/B), SIMD collision AABB filtering.
+  - `BatchEnvBase` with `irsim.make(batch_size=N)` interface.
+
+- Style:
+  - Remove 6 deprecated robot/obstacle subclass files.
+  - Remove dead decorators, empty stub methods, commented-out 3D code.
+  - Replace list-comprehension side effects with explicit `for` loops.
+  - Extract `_pad_to_3()` helper in `_cpp_sim.py` (4× dedup).
+  - Move function-scoped imports to file top.
+  - Add exception logging in `_fast_sensor_step` (was silent `except pass`).
+  - Update `.gitignore`: docs build, coverage, mypy cache, test artifacts.
 
 - Docs:
-  - Overhaul the documentation site for clarity and navigation, with full English/Chinese parity. ([#325](https://github.com/hanruihua/ir-sim/pull/325))
+  - Synchronize `repo.md` with current project status.
+
+## x-1.1.0 (2026-06-25) — Fork base
+
+Initial **irsim-x** fork from [IR-SIM](https://github.com/hanruihua/ir-sim) v2.10.1.
+
+- C++ LiDAR acceleration: AVX2 circle/rect raycast (8-beam SIMD), polygon/linestring via SpatialHashGrid DDA, FMCW with radial velocity.
+- C++ collision detection: SAT convex + ear-clip concave, robot-robot, robot-obstacle, obstacle-obstacle, linestring support.
+- C++ kinematics: diff, omni, omni_angular, acker (with proper wheelbase & steer angle).
+- Dynamic obstacle support in C++ SimWorld (circle, rect, polygon, linestring, 4 shapes).
+- Batch SIMD simulation: `BatchSimWorld` with SoA layout, SIMD kinematics, cross-environment SIMD LiDAR.
+- Python fallback paths removed — C++ is the only execution path.
+- First release on PyPI as `irsim-x`.
+
+---
+
+## 2.10.1 (unreleased) — 以下为原 IR-SIM 项目历史
 
 ## 2.10.0 (2026-05-24)
 

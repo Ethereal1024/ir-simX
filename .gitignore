@@ -39,3 +39,9 @@ tests/animation/
 repo.md
 simd_plan.md
 CLAUDE.md
+
+# Upstream comparison script
+run_original.sh
+
+# CI workflows requiring per-fork setup
+.github/workflows/pypi-publish.yml

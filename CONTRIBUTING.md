@@ -16,7 +16,7 @@ Thank you for your interest in improving IR-SIM! Whether you’re fixing a typo,
   - Improve examples under [`docs/`](https://ir-sim.readthedocs.io/en/stable/)  
 
 - **Usage Examples & Tests**  
-  - Extend or polish the [`usage/`](https://github.com/hanruihua/ir-sim/tree/main/usage) directory  
+  - Extend or polish the [`usage/`](https://github.com/Ethereal1024/ir-simX/tree/main/usage) directory  
   - Add unit tests for new features
 
 - **Discussion & Design**  
@@ -59,9 +59,9 @@ make html
 
 ## Adding New Features
 
-Current support of sensors, behaviors, and robot kinematics models can be seen in the [support](https://github.com/hanruihua/ir-sim?tab=readme-ov-file#support).
+Current support of sensors, behaviors, and robot kinematics models can be seen in the [support](https://github.com/Ethereal1024/ir-simX/blob/main/README.md#support).
 
-New features to support more platforms and scenarios to make IR-SIM more versatile are welcome. Please open an issue to discuss the design. If you prefer, you can also email `hanrh@connect.hku.hk` for a design discussion. 
+New features to support more platforms and scenarios to make IR-SIM more versatile are welcome. Please open an issue to discuss the design. 
 
 ---
 
