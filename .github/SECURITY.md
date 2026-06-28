@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Security fixes are applied to the latest released version of irsim-x on PyPI.
+Security fixes are applied to the latest released version of IR-SIM-X on PyPI.
 We recommend always running the most recent release.
 
 | Version | Supported          |
@@ -21,7 +21,7 @@ Please include:
 
 - A description of the vulnerability and its impact.
 - Steps to reproduce (a minimal scenario YAML or script is ideal).
-- The irsim-x version and Python version affected.
+- The IR-SIM-X version and Python version affected.
 
 We aim to acknowledge reports within 7 days and to provide a remediation
-timeline after triage. Thank you for helping keep irsim-x and its users safe.
+timeline after triage. Thank you for helping keep IR-SIM-X and its users safe.

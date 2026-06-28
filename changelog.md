@@ -1,6 +1,6 @@
 # Changelog
 
-## x-1.1.2 (2026-06-28)
+## X-1.1.2 (2026-06-28)
 
 - Fix:
   - **Dynamic polygon/linestring double-rotation bug**: store `init_theta` in `DynamicObstacle` and use `delta_theta` for vertex rotation in `step_dynamic_obstacles`, fixing C++ vs Python lidar position mismatch (max diff reduced from 11.6 m to 0.000 m).
@@ -33,9 +33,9 @@
 - Docs:
   - Synchronize `repo.md` with current project status.
 
-## x-1.1.0 (2026-06-25) — Fork base
+## X-1.1.0 (2026-06-25) — Fork base
 
-Initial **irsim-x** fork from [IR-SIM](https://github.com/hanruihua/ir-sim) v2.10.1.
+Initial **IR-SIM-X** fork from [IR-SIM](https://github.com/hanruihua/ir-sim) v2.10.1.
 
 - C++ LiDAR acceleration: AVX2 circle/rect raycast (8-beam SIMD), polygon/linestring via SpatialHashGrid DDA, FMCW with radial velocity.
 - C++ collision detection: SAT convex + ear-clip concave, robot-robot, robot-obstacle, obstacle-obstacle, linestring support.

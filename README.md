@@ -1,6 +1,6 @@
 <div align="center">
 
-# irsim-x: C++ Accelerated IR-SIM
+# IR-SIM-X: C++ Accelerated IR-SIM
 
 *A C++-accelerated fork of [IR-SIM](https://github.com/hanruihua/ir-sim) — faster LiDAR, collision detection, and kinematics via AVX2 SIMD and pybind11*
 
@@ -13,7 +13,7 @@
 
 **irsim-x** is a C++-accelerated fork of [IR-SIM](https://github.com/hanruihua/ir-sim), an open-source, Python-based lightweight robot simulator for navigation, control, and reinforcement learning. The core simulation loop (LiDAR raycasting, collision detection, kinematics stepping, and A\* planning) has been ported to C++ via pybind11, with **AVX2 SIMD** acceleration for LiDAR and batch multi-environment simulation.
 
-The original Python-only paths have been removed — **C++ is the only execution path**. Compared to the original IR-SIM, irsim-x achieves **5–50× faster LiDAR raycasting**, **8× faster end-to-end step** on sparse environments, and supports **batch SIMD simulation** across up to 1024 parallel environments.
+The original Python-only paths have been removed — **C++ is the only execution path**. Compared to the original IR-SIM, IR-SIM-X achieves **5–50× faster LiDAR raycasting**, **8× faster end-to-end step** on sparse environments, and supports **batch SIMD simulation** across up to 1024 parallel environments.
 
 ## Key Features
 
@@ -114,7 +114,7 @@ For more examples, see the [usage directory](https://github.com/Ethereal1024/ir-
 
 ## Citation
 
-irsim-x is a C++-accelerated fork of **IR-SIM**. If you find it useful, please consider citing the original IR-SIM paper:
+**IR-SIM-X** is a C++-accelerated fork of **IR-SIM**. If you find it useful, please consider citing the original IR-SIM paper:
 
 ```bibtex
 @article{han2026ir,

@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 type: software
 title: "IR-SIM: A Lightweight Skill-Native Simulator for Navigation, Learning, and Benchmarking"
-message: "irsim-x is a C++-accelerated fork. If you use it in your work, please cite the original IR-SIM."
+message: "IR-SIM-X is a C++-accelerated fork. If you use it in your work, please cite the original IR-SIM."
 version: 2.10.1
 date-released: 2026-01-30
 authors:
