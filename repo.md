@@ -223,7 +223,7 @@ cpp/                         # C++ pybind11 扩展
 
 - [ ] **多边形/linestring 障碍物支持** — 当前 batch 模式跳过 polygon/linestring，需加持久化 vertex 存储
 - [ ] **动态障碍物批处理** — `BatchSimWorld` 暂不支持动态障碍物步进
-- [ ] **OpenMP 多线程** — 当前 `step()` 中 vertex 变换和碰撞检测是单线程循环
+- [x] **OpenMP 多线程** — batch 模式 kinematics/trig/vertex/碰撞/LiDAR 均已 OpenMP 并行
 - [ ] **Per-environment 奖励函数** — `BatchEnvBase._compute_rewards()` 目前返回全零
 - [ ] **`reset()` 支持 per-env 种子** — 不同环境不同种子初始位置
 - [ ] **Benchmark 测试** — 对比 batch_size=1/8/64/1024 与单环境 SimWorld 性能
