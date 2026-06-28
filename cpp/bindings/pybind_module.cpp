@@ -166,6 +166,20 @@ PYBIND11_MODULE(_core, m) {
                       static_cast<float*>(res_buf.ptr));
             return result;
         })
+        .def("raycast_at", [](SimWorld& w,
+                               float ox, float oy, float heading,
+                               py::array_t<float> angles,
+                               float range_max) -> py::array_t<float>
+        {
+            auto buf = angles.request();
+            int n = (int)buf.size;
+            auto result = py::array_t<float>(n);
+            auto res_buf = result.request();
+            w.raycast_at({ox, oy}, heading,
+                         static_cast<const float*>(buf.ptr), n, range_max,
+                         static_cast<float*>(res_buf.ptr));
+            return result;
+        })
         .def("check_robot_collision", &SimWorld::check_robot_collision)
         .def("num_robots", &SimWorld::num_robots)
         .def("num_obstacles", &SimWorld::num_obstacles)

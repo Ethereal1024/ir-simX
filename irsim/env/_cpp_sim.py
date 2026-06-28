@@ -418,8 +418,8 @@ class CppSim:
         # Sync C++ results back to Python objects
         self._sync()
 
-        # LiDAR (delegated to each robot's sensor step, which may use C++ in lidar2d.py)
-        self._env._objects_sensor_step()
+        # LiDAR — use fast path for standard Lidar2D (bypass Python dict serialization)
+        self._fast_sensor_step()
 
         # Run post_process on all non-static objects (mirrors obj.step())
         for obj in self._env.objects:
@@ -429,6 +429,66 @@ class CppSim:
         # Status update
         self._env._status_step()
         self._env._world.step()
+
+    def _fast_sensor_step(self) -> None:
+        """Fast LiDAR step using SimWorld::raycast_at, bypassing Python dict serialization.
+
+        Only applies to standard Lidar2D (no noise, no FMCW).  Falls back to the
+        Python-based _objects_sensor_step for other sensor types.
+        """
+        w = self._w
+        if w is None:
+            self._env._objects_sensor_step()
+            return
+
+        fallback_needed = False
+        for py_obj in self._env.objects:
+            if py_obj.role != "robot":
+                continue
+            lidar = getattr(py_obj, "lidar", None)
+            if lidar is None:
+                continue
+
+            # Check if this LiDAR supports the fast path
+            from irsim.world.sensors.lidar2d import Lidar2D as StdLidar2D
+            if not isinstance(lidar, StdLidar2D):
+                fallback_needed = True
+                continue
+
+            lidar_origin = getattr(lidar, "lidar_origin", None)
+            if lidar_origin is None or lidar_origin.shape[0] < 3:
+                fallback_needed = True
+                continue
+
+            ox = float(lidar_origin[0, 0])
+            oy = float(lidar_origin[1, 0])
+            heading = float(lidar_origin[2, 0])
+
+            try:
+                raw = w.raycast_at(
+                    ox, oy, heading,
+                    lidar.angle_list.astype(np.float32),
+                    float(lidar.range_max),
+                )
+                if raw is not None and len(raw) == lidar.number:
+                    lidar.range_data[:] = raw
+                    if lidar.noise:
+                        from irsim.util.random import rng
+                        for i in range(lidar.number):
+                            if lidar.range_data[i] < lidar.range_max:
+                                lidar.range_data[i] += rng.normal(0, lidar.std)
+                else:
+                    fallback_needed = True
+            except Exception:
+                fallback_needed = True
+
+        if fallback_needed:
+            self._env._objects_sensor_step()
+
+        # Run sensor_step for non-robot objects (e.g., FMCW sensors on obstacles)
+        for py_obj in self._env.objects:
+            if py_obj.role != "robot" and hasattr(py_obj, "sensor_step"):
+                py_obj.sensor_step()
 
     def _sync(self) -> None:
         """Write C++ simulation results back to Python objects."""

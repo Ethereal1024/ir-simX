@@ -414,6 +414,22 @@ void SimWorld::raycast(int robot_id,
 #endif
 }
 
+void SimWorld::raycast_at(Vec2 origin, float heading,
+                           const float* angles, int n_beams, float range_max,
+                           float* ranges_out)
+{
+#ifdef USE_AVX2
+    lidar_raycast_avx2(origin, heading, angles, n_beams, range_max,
+                       obstacles_.data(), (int)obstacles_.size(),
+                       ranges_out,
+                       lidar_grid_.empty() ? nullptr : &lidar_grid_);
+#else
+    lidar_raycast_scalar(origin, heading, angles, n_beams, range_max,
+                         obstacles_.data(), (int)obstacles_.size(),
+                         ranges_out);
+#endif
+}
+
 void SimWorld::rebuild_lidar_grid() {
     lidar_grid_.build(obstacles_.data(), (int)obstacles_.size());
 }

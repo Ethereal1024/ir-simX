@@ -132,10 +132,15 @@ public:
     // obs_actions: flat array [action_dim * n_dynamic_obs]
     void step_dynamic_obstacles(const float* obs_actions, int action_dim);
 
-    // LiDAR: cast from a robot's position
+    // LiDAR: cast from a robot's position (uses robot's heading)
     void raycast(int robot_id,
                  const float* angles, int n_beams, float range_max,
                  float* ranges_out);
+
+    // LiDAR: cast from arbitrary origin + heading (for LiDAR sensor offset)
+    void raycast_at(Vec2 origin, float heading,
+                    const float* angles, int n_beams, float range_max,
+                    float* ranges_out);
 
     // Collision check for a specific robot
     bool check_robot_collision(int robot_id);
