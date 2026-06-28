@@ -488,7 +488,8 @@ class ObjectBasePlotMixin:
 
         # Update sensors
         if self.show_sensor:
-            [sensor.step_plot() for sensor in self.sensors]
+            for sensor in self.sensors:
+                sensor.step_plot()
 
     def plot_object(
         self,
@@ -944,12 +945,6 @@ class ObjectBasePlotMixin:
 
         self.plot_patch_list.append(self.fov_patch)
 
-    def plot_uncertainty(self, ax, **kwargs):
-        """
-        To be completed.
-        """
-        pass
-
     def plot_clear(self, all: bool = False):
         """
         Clear all plotted elements from the axis.
@@ -957,16 +952,21 @@ class ObjectBasePlotMixin:
         Args:
             all (bool): If True, also clears trail elements. If False, keeps trail elements. Defaults to False.
         """
-        [patch.remove() for patch in self.plot_patch_list]
-        [line.pop(0).remove() for line in self.plot_line_list]
-        [text.remove() for text in self.plot_text_list]
+        for patch in self.plot_patch_list:
+            patch.remove()
+        for line in self.plot_line_list:
+            line.pop(0).remove()
+        for text in self.plot_text_list:
+            text.remove()
 
         if all:
-            [trail.remove() for trail in self.plot_trail_list]
+            for trail in self.plot_trail_list:
+                trail.remove()
             self.plot_trail_list = []
 
         self.plot_patch_list = []
         self.plot_line_list = []
         self.plot_text_list = []
 
-        [sensor.plot_clear() for sensor in self.sensors]
+        for sensor in self.sensors:
+            sensor.plot_clear()

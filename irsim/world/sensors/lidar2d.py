@@ -589,9 +589,12 @@ class Lidar2D:
         """
         Clear the plot elements from the axis.
         """
-        [patch.remove() for patch in self.plot_patch_list]
-        [line.pop(0).remove() for line in self.plot_line_list]
-        [text.remove() for text in self.plot_text_list]
+        for patch in self.plot_patch_list:
+            patch.remove()
+        for line in self.plot_line_list:
+            line.pop(0).remove()
+        for text in self.plot_text_list:
+            text.remove()
 
         self.plot_patch_list = []
         self.plot_line_list = []

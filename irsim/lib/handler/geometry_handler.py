@@ -13,14 +13,13 @@ from shapely import (
     make_valid,
     minimum_bounding_radius,
 )
-from shapely.ops import transform, unary_union
+from shapely.ops import unary_union
 
 from irsim.lib import random_generate_polygon
 from irsim.util.random import rng
 from irsim.util.util import (
     gen_inequal_from_vertex,
     geometry_transform,
-    get_transform,
     is_convex_and_ordered,
     log_warning,
 )
@@ -176,13 +175,6 @@ class geometry_handler(ABC):
             y = self.geometry.xy[1]
             return np.c_[x, y].T
         return self.geometry.exterior.coords._coords.T[:, :-1]
-
-    @property
-    def init_vertices(self):
-        """
-        return original_vertices: [[x1, y1], [x2, y2]....    [[x1, y1]]]; [x1, y1] will repeat twice
-        """
-        assert "this property is renamed to be original_vertices"
 
     @property
     def original_vertices(self) -> np.ndarray | None:
@@ -385,50 +377,6 @@ class PointsGeometry(geometry_handler):
         return MultiLineString([LineString(boundary.coords)])
 
 
-########################################3D Geometry Handler #############################################################
-
-
-class geometry_handler3d(ABC):
-    """
-    This class is used to handle the 3D geometry of the object. It reads the shape parameters from yaml file and constructs the geometry of the object.
-    """
-
-    def __init__(self, name: str, **kwargs):
-        self.name = name
-        self._original_geometry = self.construct_original_geometry(**kwargs)
-        self.geometry = self._original_geometry
-        self.wheelbase = kwargs.get("wheelbase")
-        self.length, self.width, self.depth = self.cal_length_width(
-            self._original_geometry
-        )
-
-    @abstractmethod
-    def construct_original_geometry(self, **kwargs):
-        pass
-
-    def step(self, state):
-        """
-        Transform geometry to the new state.
-
-        Args:
-            state (np.ndarray 6*1): [x, y, z, roll, pitch, roll].
-
-        Returns:
-            Transformed geometry.
-        """
-
-        def transform_with_state(x, y):
-            trans, rot = get_transform(state)
-            points = np.array([x, y])
-            new_points = rot @ points + trans
-            return (new_points[0, :], new_points[1, :])
-
-        new_geometry = transform(transform_with_state, self._original_geometry)
-        self.geometry = new_geometry
-
-        return new_geometry
-
-
 class GeometryFactory:
     """
     Factory class to create geometry handlers.
@@ -452,10 +400,5 @@ class GeometryFactory:
 
         if name == "map":
             return PointsGeometry(name, **kwargs)
-
-        # elif name == 'sphere3d':
-        #     return Sphere3DGeometry(name, **kwargs)
-        # elif name == 'cuboid3d':
-        #     return Cuboid3DGeometry(name, **kwargs)
 
         raise ValueError(f"Invalid geometry name: {name}")

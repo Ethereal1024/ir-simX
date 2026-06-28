@@ -1,6 +1,5 @@
 """C++ BatchSimWorld bridge — no Python env dependency, pure C++ bulk operations."""
 
-from typing import Any
 import numpy as np
 
 try:

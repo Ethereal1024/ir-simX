@@ -388,7 +388,6 @@ class reciprocal_vel_obs:
             rel_vx = vx - rvo[0][0]
             rel_vy = vy - rvo[0][1]
 
-            # rel_radians = atan2(rel_vy, rel_vx)
             rel_vector = [rel_vx, rel_vy]
 
             if reciprocal_vel_obs.between_vector(rvo[1], rvo[2], rel_vector):

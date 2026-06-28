@@ -80,7 +80,6 @@ class AStarPlanner:
     def _build_grid(self) -> np.ndarray:
         """Build an occupancy grid by sampling each cell via Shapely collision."""
         grid = np.zeros((self.x_width, self.y_width), dtype=np.float64)
-        half_w = self.resolution * 0.5
         shape = {"name": "rectangle", "length": self.resolution,
                  "width": self.resolution}
         gf = self._make_geometry_factory(shape)

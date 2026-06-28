@@ -24,13 +24,6 @@ from irsim.util.util import (
 from irsim.world.object_plot import ObjectBasePlotMixin
 from irsim.world.sensors.sensor_factory import SensorFactory
 
-try:
-    import cpp
-
-    HAS_C_CORE = hasattr(cpp, "SimWorld")
-except Exception:
-    HAS_C_CORE = False
-
 
 @dataclass
 class ObjectInfo:
@@ -534,7 +527,8 @@ class ObjectBase(ObjectBasePlotMixin):
         """
         Update all sensors for the current state.
         """
-        [sensor.step(self.state[0:3]) for sensor in self.sensors]
+        for sensor in self.sensors:
+            sensor.step(self.state[0:3])
 
     def check_status(self):
         """
@@ -1141,12 +1135,6 @@ class ObjectBase(ObjectBasePlotMixin):
         self._velocity_xy_cache = None
         self._rvo_neighbor_state_cache = None
         self._rvo_line_segments_cache = None
-
-    def remove(self):
-        """
-        Remove the object from the environment.
-        """
-        del self
 
     def get_vel_range(self) -> tuple[np.ndarray, np.ndarray]:
         """

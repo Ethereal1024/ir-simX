@@ -3,7 +3,6 @@ import inspect
 import math
 import os
 import sys
-import time
 from collections import deque
 from functools import wraps
 from math import atan2, cos, pi, sin
@@ -450,28 +449,6 @@ def omni_to_diff(
     return np.array([[v], [w]])
 
 
-def diff_to_omni(state_ori: float, vel_diff: np.ndarray) -> np.ndarray:
-    """
-    Convert differential velocity to omnidirectional velocity.
-
-    Args:
-        state_ori (float): Orientation angle.
-        vel_diff (np.array): Differential velocity [linear, angular] (2x1).
-
-    Returns:
-        np.array: Omnidirectional velocity [vx, vy] (2x1).
-    """
-    if len(vel_diff.shape) == 0:
-        return np.zeros((2, 1))
-
-    vel_linear = vel_diff[0, 0]
-    theta = state_ori
-    vx = vel_linear * cos(theta)
-    vy = vel_linear * sin(theta)
-
-    return np.array([[vx], [vy]])
-
-
 def cross_product(o: list[float], a: list[float], b: list[float]) -> float:
     """
     Compute the cross product of vectors OA and OB.
@@ -564,21 +541,6 @@ def gen_inequal_from_vertex(vertex: np.ndarray):
 
     return G, h
 
-
-def distance(
-    point1: list[float] | np.ndarray, point2: list[float] | np.ndarray
-) -> float:
-    """
-    Compute the distance between two points.
-
-    Args:
-        point1 (np.array): First point [x, y] (2x1).
-        point2 (np.array): Second point [x, y] (2x1).
-
-    Returns:
-        float: Distance between points.
-    """
-    return dist_hypot(point1[0, 0], point1[1, 0], point2[0, 0], point2[1, 0])
 
 
 def dist_hypot(x1: float, y1: float, x2: float, y2: float) -> float:
@@ -687,171 +649,6 @@ def validate_shape(**shape_requirements):
     return decorator
 
 
-def validate_length(**length_requirements):
-    """
-    Decorator to validate that sequence parameters have minimum length.
-
-    Args:
-        **length_requirements: Mapping of parameter names to minimum length values.
-            e.g., alpha=4 means len(alpha) must be >= 4
-
-    Example:
-        .. code-block:: python
-
-            @validate_length(alpha=4)
-            def some_function(alpha):
-                ...
-
-    Raises:
-        TypeError: If parameter doesn't support len().
-        ValueError: If parameter length is less than required.
-    """
-
-    def decorator(func):
-        sig = inspect.signature(func)
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            bound = sig.bind(*args, **kwargs)
-            bound.apply_defaults()
-
-            for param, min_len in length_requirements.items():
-                if param in bound.arguments:
-                    value = bound.arguments[param]
-                    if value is not None:
-                        try:
-                            length = len(value)
-                        except TypeError:
-                            raise TypeError(
-                                f"Parameter '{param}' must be a sequence, "
-                                f"got {type(value).__name__}"
-                            ) from None
-                        if length < min_len:
-                            raise ValueError(
-                                f"Parameter '{param}' must have length >= {min_len}, "
-                                f"got {length}"
-                            )
-
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def ensure_column_vector(*param_names):
-    """
-    Decorator to convert parameters to column vectors (Nx1 numpy arrays).
-
-    - Lists are converted to numpy arrays
-    - 1D arrays are reshaped to column vectors (N,) -> (N, 1)
-    - None values are left unchanged
-
-    Args:
-        *param_names: Names of parameters to convert.
-
-    Example:
-        .. code-block:: python
-
-            @ensure_column_vector('state', 'velocity')
-            def some_function(state, velocity, step_time):
-                ...
-    """
-
-    def decorator(func):
-        sig = inspect.signature(func)
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            bound = sig.bind(*args, **kwargs)
-            bound.apply_defaults()
-
-            for param in param_names:
-                if param in bound.arguments:
-                    value = bound.arguments[param]
-                    if value is not None:
-                        if isinstance(value, list):
-                            value = np.array(value)
-                        if isinstance(value, np.ndarray) and value.ndim == 1:
-                            value = value[:, np.newaxis]
-                        bound.arguments[param] = value
-
-            return func(*bound.args, **bound.kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def ensure_numpy(*param_names):
-    """
-    Decorator to convert parameters to numpy arrays.
-
-    - Lists are converted to numpy arrays
-    - None values are left unchanged
-    - Already numpy arrays are left unchanged
-
-    Args:
-        *param_names: Names of parameters to convert.
-
-    Example:
-        .. code-block:: python
-
-            @ensure_numpy('data', 'weights')
-            def some_function(data, weights):
-                ...
-    """
-
-    def decorator(func):
-        sig = inspect.signature(func)
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            bound = sig.bind(*args, **kwargs)
-            bound.apply_defaults()
-
-            for param in param_names:
-                if param in bound.arguments:
-                    value = bound.arguments[param]
-                    if value is not None and isinstance(value, list):
-                        bound.arguments[param] = np.array(value)
-
-            return func(*bound.args, **bound.kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def time_it(name: str = "Function") -> Any:
-    """
-    Decorator to measure function execution time.
-
-    Args:
-        name (str): Function name for logging (default "Function").
-        print (bool): Whether to print execution time (default True).
-
-    Returns:
-        function: Wrapped function with timing.
-    """
-
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            wrapper.count += 1
-            start = time.time()
-            result = func(*args, **kwargs)
-            end = time.time()
-            wrapper.func_count += 1
-            print(f"{name} execute time {(end - start):.6f} seconds")
-            return result
-
-        wrapper.count = 0
-        wrapper.func_count = 0
-        return wrapper
-
-    return decorator
-
-
 def normalize_actions(func):
     """
     Decorator to normalize (action, action_id) into an aligned actions list.
@@ -883,35 +680,6 @@ def normalize_actions(func):
         return func(self, actions, 0, *args, **kwargs)
 
     return wrapper
-
-
-def time_it2(name: str = "Function") -> Any:
-    """
-    Decorator to measure function execution time with instance attribute check.
-
-    Args:
-        name (str): Function name for logging (default "Function").
-
-    Returns:
-        function: Wrapped function with timing.
-    """
-
-    def decorator(func):
-        def wrapper(self, *args, **kwargs):
-            wrapper.count += 1
-            start = time.time()
-            result = func(self, *args, **kwargs)
-            end = time.time()
-            wrapper.func_count += 1
-            if self.time_print:
-                print(f"{name} execute time {(end - start):.6f} seconds")
-            return result
-
-        wrapper.count = 0
-        wrapper.func_count = 0
-        return wrapper
-
-    return decorator
 
 
 def to_numpy(

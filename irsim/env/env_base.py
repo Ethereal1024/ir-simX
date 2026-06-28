@@ -335,7 +335,8 @@ class EnvBase:
 
     def _objects_sensor_step(self) -> None:
         """step the sensors of all objects with updated states"""
-        [obj.sensor_step() for obj in self.objects]
+        for obj in self.objects:
+            obj.sensor_step()
 
     def _object_step(
         self, action: np.ndarray | list[Any] | None, obj_id: int = 0
@@ -355,11 +356,14 @@ class EnvBase:
             return
 
         self.objects[obj_id].step(action)
-        [obj.step() for obj in self.objects if obj._id != obj_id]
+        for obj in self.objects:
+            if obj._id != obj_id:
+                obj.step()
 
     def _objects_check_status(self) -> None:
         """Refresh per-object status flags (e.g., arrival, collision)."""
-        [obj.check_status() for obj in self.objects]
+        for obj in self.objects:
+            obj.check_status()
 
     def _assign_keyboard_action(self, action: list[Any]) -> list[Any]:
         """
@@ -768,7 +772,8 @@ class EnvBase:
         self.reset_flag = False
 
     def _reset_all(self) -> None:
-        [obj.reset() for obj in self.objects]
+        for obj in self.objects:
+            obj.reset()
 
     def refresh(self) -> None:
         """

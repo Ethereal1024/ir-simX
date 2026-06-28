@@ -6,7 +6,7 @@ from typing import Any, Optional
 # ── C++ core guard: irsim-x requires the compiled extension ──
 try:
     from cpp._core import SimWorld as _SimWorld
-except ImportError:
+except ImportError as e:
     raise ImportError(
         "irsim-x requires the compiled C++ core.\n"
         "Build it with:  pip install -e .\n"
@@ -14,7 +14,7 @@ except ImportError:
         "If you have the original ir-sim installed, uninstall it first:\n"
         "  pip uninstall ir-sim\n"
         "  pip install irsim-x"
-    )
+    ) from e
 
 from irsim.env import EnvBase, EnvBase3D
 

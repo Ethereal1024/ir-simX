@@ -174,67 +174,69 @@ class EnvPlot:
         if objects is None:
             objects = []
         if mode == "dynamic":
-            [obj._step_plot(**kwargs) for obj in objects if not obj.static]
+            for obj in objects:
+                if not obj.static:
+                    obj._step_plot(**kwargs)
         elif mode == "static":
-            [obj._step_plot(**kwargs) for obj in objects if obj.static]
+            for obj in objects:
+                if obj.static:
+                    obj._step_plot(**kwargs)
         elif mode == "all":
-            [obj._step_plot(**kwargs) for obj in objects]
+            for obj in objects:
+                obj._step_plot(**kwargs)
         else:
             self.logger.error("Error: Invalid draw mode")
 
     def draw_components(
         self, mode: str = "all", objects: list[Any] | None = None, **kwargs: Any
     ) -> None:
-        """
-        Draw the components in the environment with global axis.
-
-        Args:
-            mode (str): 'static', 'dynamic', or 'all' to specify which objects to draw.
-            objects (list): List of objects to draw.
-            kwargs: Additional plotting options.
-        """
         if objects is None:
             objects = []
         if mode == "static":
-            [obj.plot(self.ax, **kwargs) for obj in objects if obj.static]
+            for obj in objects:
+                if obj.static:
+                    obj.plot(self.ax, **kwargs)
         elif mode == "dynamic":
-            [obj.plot(self.ax, **kwargs) for obj in objects if not obj.static]
+            for obj in objects:
+                if not obj.static:
+                    obj.plot(self.ax, **kwargs)
         elif mode == "all":
-            [obj.plot(self.ax, **kwargs) for obj in objects]
+            for obj in objects:
+                obj.plot(self.ax, **kwargs)
         else:
             self.logger.error("Error: Invalid draw mode")
 
     def clear_components(
         self, mode: str = "all", objects: list[Any] | None = None
     ) -> None:
-        """
-        Clear the components in the environment.
-
-        Args:
-            mode (str): 'static', 'dynamic', or 'all' to specify which objects to clear.
-            objects (list): List of objects to clear.
-        """
         if objects is None:
             objects = []
         if mode == "dynamic":
-            [obj.plot_clear() for obj in objects if not obj.static]
-            [line.pop(0).remove() for line in self.dyna_line_list]
-            [points.remove() for points in self.dyna_point_list]
-            [quiver.remove() for quiver in self.dyna_quiver_list]
-
+            for obj in objects:
+                if not obj.static:
+                    obj.plot_clear()
+            for line in self.dyna_line_list:
+                line.pop(0).remove()
+            for points in self.dyna_point_list:
+                points.remove()
+            for quiver in self.dyna_quiver_list:
+                quiver.remove()
             self.dyna_line_list = []
             self.dyna_point_list = []
             self.dyna_quiver_list = []
-
         elif mode == "static":
-            [obj.plot_clear() for obj in objects if obj.static]
-
+            for obj in objects:
+                if obj.static:
+                    obj.plot_clear()
         elif mode == "all":
-            [obj.plot_clear(all=True) for obj in objects]
-
-            [line.pop(0).remove() for line in self.dyna_line_list]
-            [points.remove() for points in self.dyna_point_list]
-            [quiver.remove() for quiver in self.dyna_quiver_list]
+            for obj in objects:
+                obj.plot_clear(all=True)
+            for line in self.dyna_line_list:
+                line.pop(0).remove()
+            for points in self.dyna_point_list:
+                points.remove()
+            for quiver in self.dyna_quiver_list:
+                quiver.remove()
 
             self.dyna_line_list = []
             self.dyna_point_list = []

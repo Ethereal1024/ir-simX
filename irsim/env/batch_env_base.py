@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
+
 import numpy as np
+
 try:
     import yaml
 except ImportError:
@@ -61,10 +63,10 @@ def _robot_config_from_yaml(yaml_path: str) -> dict:
             angle_range = float(s.get("angle_range", 4.7124))
             range_max = float(s.get("range_max", 30.0))
             angle_list = np.linspace(-angle_range / 2, angle_range / 2, n_beams, dtype=np.float32)
-            lidar_cfg = dict(
-                n_beams=n_beams, angle_range=angle_range,
-                range_max=range_max, angle_list=angle_list,
-            )
+            lidar_cfg = {
+                "n_beams": n_beams, "angle_range": angle_range,
+                "range_max": range_max, "angle_list": angle_list,
+            }
             break
 
     world = cfg.get("world", {})

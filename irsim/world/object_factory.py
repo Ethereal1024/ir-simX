@@ -10,16 +10,7 @@ from irsim.util.util import (
 )
 from irsim.world.map.obstacle_map import ObstacleMap
 from irsim.world.object_base import ObjectBase
-
-# Keep backward-compatible imports so existing code can still reach these
-# via ``from irsim.world.object_factory import RobotDiff`` etc.
-from irsim.world.obstacles.obstacle_acker import ObstacleAcker  # noqa: F401
-from irsim.world.obstacles.obstacle_diff import ObstacleDiff  # noqa: F401
-from irsim.world.obstacles.obstacle_omni import ObstacleOmni  # noqa: F401
 from irsim.world.obstacles.obstacle_static import ObjectStatic
-from irsim.world.robots.robot_acker import RobotAcker  # noqa: F401
-from irsim.world.robots.robot_diff import RobotDiff  # noqa: F401
-from irsim.world.robots.robot_omni import RobotOmni  # noqa: F401
 
 
 class ObjectFactory:

@@ -3,6 +3,10 @@
 from typing import Any
 
 import numpy as np
+import shapely
+
+from irsim.util.random import rng
+from irsim.util.util import transform_point_with_state
 
 try:
     import cpp as _cc
@@ -10,6 +14,13 @@ try:
     HAS_C_CORE = hasattr(_cc, "SimWorld")
 except Exception:
     HAS_C_CORE = False
+
+
+def _pad_to_3(arr: np.ndarray, fill: float = 0.0) -> np.ndarray:
+    """Pad a 1D array to length 3 with *fill*."""
+    out = np.full(3, fill, dtype=np.float32)
+    out[: len(arr)] = arr
+    return out
 
 
 class CppSim:
@@ -53,14 +64,9 @@ class CppSim:
                 if info is not None
                 else np.array([1.0, 1.0], dtype=np.float32)
             )
-            # Pad to 3 elements for C++ (omni_angular uses 3);
-            # unused dims get inf so they don't constrain
-            vmin3 = np.full(3, -np.inf, dtype=np.float32)
-            vmin3[: len(vmin)] = vmin
-            vmax3 = np.full(3, np.inf, dtype=np.float32)
-            vmax3[: len(vmax)] = vmax
-            vacc3 = np.full(3, np.inf, dtype=np.float32)
-            vacc3[: len(vacc)] = vacc
+            vmin3 = _pad_to_3(vmin, -np.inf)
+            vmax3 = _pad_to_3(vmax, np.inf)
+            vacc3 = _pad_to_3(vacc, np.inf)
             wb = getattr(obj, "wheelbase", None)
             wheelbase = float(wb) if wb is not None else 0.5
             rid = w.add_robot(
@@ -119,8 +125,7 @@ class CppSim:
                 if gf is None:
                     continue
                 verts = getattr(gf, "vertices", None)
-                if obj.static:
-                    if verts is not None and verts.shape[1] == 4:
+                if obj.static and verts is not None and verts.shape[1] == 4:
                         w.add_obstacle(
                             {
                                 "type": "polygon",
@@ -170,12 +175,9 @@ class CppSim:
                     vmax = getattr(obj, "vel_max", np.array([1.0, 1.0])).ravel().astype(np.float32)
                     info = getattr(obj, "info", None)
                     vacc = info.acce.ravel().astype(np.float32) if info is not None else np.array([1.0, 1.0], dtype=np.float32)
-                    vmin3 = np.full(3, -np.inf, dtype=np.float32)
-                    vmin3[: len(vmin)] = vmin
-                    vmax3 = np.full(3, np.inf, dtype=np.float32)
-                    vmax3[: len(vmax)] = vmax
-                    vacc3 = np.full(3, np.inf, dtype=np.float32)
-                    vacc3[: len(vacc)] = vacc
+                    vmin3 = _pad_to_3(vmin, -np.inf)
+                    vmax3 = _pad_to_3(vmax, np.inf)
+                    vacc3 = _pad_to_3(vacc, np.inf)
                     s = getattr(obj, "state", None)
                     theta = float(s[2, 0]) if s is not None and s.shape[0] >= 3 else 0.0
                     did = w.add_dynamic_polygon_obstacle(kid, x, y, theta, vlist_flat, vmin3, vmax3, vacc3)
@@ -270,12 +272,9 @@ class CppSim:
             if info is not None
             else np.array([1.0, 1.0], dtype=np.float32)
         )
-        vmin3 = np.full(3, -np.inf, dtype=np.float32)
-        vmin3[: len(vmin)] = vmin
-        vmax3 = np.full(3, np.inf, dtype=np.float32)
-        vmax3[: len(vmax)] = vmax
-        vacc3 = np.full(3, np.inf, dtype=np.float32)
-        vacc3[: len(vacc)] = vacc
+        vmin3 = _pad_to_3(vmin, -np.inf)
+        vmax3 = _pad_to_3(vmax, np.inf)
+        vacc3 = _pad_to_3(vacc, np.inf)
         s = getattr(obj, "state", None)
         theta = float(s[2, 0]) if s is not None and s.shape[0] >= 3 else 0.0
         if shape_name == "rectangle":
@@ -306,12 +305,9 @@ class CppSim:
             if info is not None
             else np.array([1.0, 1.0], dtype=np.float32)
         )
-        vmin3 = np.full(3, -np.inf, dtype=np.float32)
-        vmin3[: len(vmin)] = vmin
-        vmax3 = np.full(3, np.inf, dtype=np.float32)
-        vmax3[: len(vmax)] = vmax
-        vacc3 = np.full(3, np.inf, dtype=np.float32)
-        vacc3[: len(vacc)] = vacc
+        vmin3 = _pad_to_3(vmin, -np.inf)
+        vmax3 = _pad_to_3(vmax, np.inf)
+        vacc3 = _pad_to_3(vacc, np.inf)
         s = getattr(obj, "state", None)
         theta = float(s[2, 0]) if s is not None and s.shape[0] >= 3 else 0.0
         vlist_flat = [[float(verts[0, i]), float(verts[1, i])]
@@ -460,7 +456,6 @@ class CppSim:
                 continue
 
             state = py_obj.state
-            from irsim.util.util import transform_point_with_state
             lidar_origin = transform_point_with_state(offset, state)
             lidar.lidar_origin = lidar_origin
 
@@ -494,13 +489,15 @@ class CppSim:
                     if raw is not None and len(raw) == lidar.number:
                         lidar.range_data[:] = raw
                         if lidar.noise:
-                            from irsim.util.random import rng
                             for i in range(lidar.number):
                                 if lidar.range_data[i] < lidar.range_max:
                                     lidar.range_data[i] += rng.normal(0, lidar.std)
                         success = True
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "LiDAR fast path failed for robot %d: %s", py_obj._id, e
+                )
 
             if success:
                 handled_ids.add(id(py_obj))
@@ -557,7 +554,6 @@ class CppSim:
             # Update geometry for rendering (mirrors obj.step())
             if py_obj.gf is not None:
                 py_obj._geometry = py_obj.gf.step(py_obj.state)
-                import shapely
                 py_obj._geometry_valid = shapely.is_valid(py_obj._geometry)
             py_obj._invalidate_reactive_cache()
         py_obstacles = [
@@ -596,6 +592,5 @@ class CppSim:
 
             if py_obj.gf is not None:
                 py_obj._geometry = py_obj.gf.step(py_obj.state)
-                import shapely
                 py_obj._geometry_valid = shapely.is_valid(py_obj._geometry)
             py_obj.collision_flag = collided

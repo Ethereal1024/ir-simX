@@ -382,14 +382,10 @@ class KinematicsFactory:
                 return handler_cls(name, noise, alpha, mode, wheelbase or 1.0)
             return handler_cls(name, noise, alpha)
 
-        # elif name == 'rigid3d':
-        #     return Rigid3DKinematics(name, noise, alpha)
         if role == "robot":
             log_warning(
                 f"Unknown kinematics type: {name}, the robot will be stationary."
             )
-
-        # Fallback to a stationary kinematics handler (differential with zero wheelbase)
         return DifferentialKinematics(name or "diff", noise, alpha)
 
     @staticmethod
