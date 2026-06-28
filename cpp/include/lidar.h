@@ -42,12 +42,10 @@ public:
     int num_circle_rect() const { return n_circle_ + n_rect_; }
 
     // C/R → SIMD threshold for AVX2 single-env path.
-    // When CIRCLE+RECT count ≤ this value, they use per-obstacle SIMD
-    // instead of the grid (which has overhead for small counts).
-    // Always use full grid (CR_SIMD_THRESHOLD = 0 disables per-obstacle SIMD).
-    // This ensures the fast path and the standalone lidar_raycast produce
-    // identical results (both go through the same grid query).
-    static constexpr int CR_SIMD_THRESHOLD = 0;
+    // When CIRCLE+RECT count ≤ this value, per-obstacle SIMD is used
+    // (faster than grid for small counts).  When above, they are
+    // included in the grid (faster DDA for many obstacles).
+    static constexpr int CR_SIMD_THRESHOLD = 50;
 
 private:
     float cell_size_ = DEFAULT_CELL_SIZE;

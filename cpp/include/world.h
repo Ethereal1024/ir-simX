@@ -62,6 +62,8 @@ struct DynamicObstacle {
     // For linestring: vertices stored persistently (same as polygon but open chain)
     std::vector<Vec2> local_linestring_verts;
 
+    float init_theta = 0;  // initial heading for polygon/linestring rotation correction
+
     // Collision flag (set by detect_collisions when overlapping another object)
     bool collision = false;
 

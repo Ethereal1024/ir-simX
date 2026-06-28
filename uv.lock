@@ -702,8 +702,8 @@ wheels = [
 ]
 
 [[package]]
-name = "ir-simx"
-version = "2.10.0"
+name = "irsim-x"
+version = "1.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "imageio" },
@@ -788,7 +788,7 @@ provides-extras = ["keyboard", "all"]
 dev = [
     { name = "bandit", extras = ["toml"], specifier = ">=1.8.0" },
     { name = "black", specifier = ">=25.1.0" },
-    { name = "pre-commit", specifier = "==4.6.0" },
+    { name = "pre-commit", specifier = ">=4.6.0" },
     { name = "pybind11", specifier = ">=2.9.0" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-cov", specifier = ">=6.2.1" },

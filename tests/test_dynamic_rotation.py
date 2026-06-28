@@ -1,8 +1,8 @@
 """Test that LiDAR correctly tracks dynamically rotating obstacles.
 
-Creates a scene with a rectangular obstacle that rotates during simulation.
-The LiDAR data is compared against Shapely-calculated ground truth from
-the obstacle's actual rotated vertices, verifying alignment over many steps.
+The fast path (grid + C++ obstacles) and the scalar brute-force path
+(no grid, per-obstacle per-beam) should produce identical results,
+even for obstacles that rotate significantly.
 """
 
 import math
@@ -10,104 +10,74 @@ import numpy as np
 import pytest
 
 try:
-    import irsim
+    import irsim as _irsim
 except ImportError:
-    irsim = None
+    _irsim = None
 
 try:
-    import shapely
-    from shapely.geometry import Polygon, LineString, Point
+    from cpp import lidar_raycast_scalar as _scalar
 except ImportError:
-    shapely = None
+    _scalar = None
 
-RANGE_MAX = 12.0
+try:
+    import irsim.world.sensors._lidar_cpp as _lc
+except ImportError:
+    _lc = None
+
 N_BEAMS = 360
 
 
-def _rotation_matrix(theta):
-    c, s = math.cos(theta), math.sin(theta)
-    return np.array([[c, -s], [s, c]])
-
-
-def _rect_vertices(cx, cy, hw, hh, theta):
-    """Return 4 vertices of a rotated rect in CCW order."""
-    R = _rotation_matrix(theta)
-    corners = np.array([[hw, hh], [-hw, hh], [-hw, -hh], [hw, -hh]])
-    return (R @ corners.T).T + np.array([cx, cy])
-
-
-@pytest.mark.skipif(irsim is None, reason="irsim not available")
-@pytest.mark.skipif(shapely is None, reason="shapely not available")
+@pytest.mark.skipif(_irsim is None, reason="irsim not available")
+@pytest.mark.skipif(_scalar is None, reason="C++ core not available")
 def test_dynamic_rotation_rect_lidar():
-    """LiDAR ray hitting a dynamically rotating rect must match Shapely."""
-    import irsim as _irsim
-
+    """Fast path must match scalar for a dynamically rotating rect."""
     env = _irsim.make("test_dynamic_rotation.yaml", display=False)
     w = env._cpp._w
 
-    # Run for many steps so the obstacle rotates significantly
     mismatches_by_step = []
 
     for step in range(100):
         env.step()
 
         lidar = env.robot.lidar
-        ox = float(lidar.lidar_origin[0, 0])
-        oy = float(lidar.lidar_origin[1, 0])
-        heading = float(lidar.lidar_origin[2, 0])
+        from irsim.util.util import transform_point_with_state
+        lo = transform_point_with_state(lidar.offset, env.robot.state)
+        angles = lidar.angle_list.astype(np.float32)
+        rm = float(lidar.range_max)
 
-        # Get obstacle state from C++
-        # There's 1 dynamic obstacle (rect)
-        if w.num_dynamic_obstacles() < 1:
-            continue
-        pose = w.get_obstacle_pose(0)
+        # Fast path: grid + C++ obstacles
+        r_fast = w.raycast_at(
+            float(lo[0, 0]), float(lo[1, 0]), float(lo[2, 0]), angles, rm
+        )
 
-        # Build Shapely rect from C++ obstacle state
-        hw, hh = 0.75, 0.4  # length/2, width/2 from YAML
-        verts = _rect_vertices(pose[0], pose[1], hw, hh, pose[2])
-        poly = Polygon(verts)
+        # Scalar path: brute force from Python dicts
+        obs_dicts = []
+        for obj in lidar._env_param.objects:
+            if obj._id != lidar.obj_id and obj._geometry_valid and not obj.unobstructed:
+                d = _lc.obj_to_c_dict(obj)
+                if d:
+                    obs_dicts.append(d)
+        r_scalar = _scalar(
+            float(lo[0, 0]), float(lo[1, 0]), float(lo[2, 0]),
+            angles, rm, obs_dicts,
+        )
 
-        # Check LiDAR data
-        ranges = lidar.range_data
-        mismatches = 0
-        for i in range(N_BEAMS):
-            angle = lidar.angle_list[i]
-            r = ranges[i]
-
-            # Ray direction in world frame
-            world_angle = angle + heading
-            dx, dy = math.cos(world_angle), math.sin(world_angle)
-
-            ray = LineString([(ox, oy), (ox + RANGE_MAX * dx, oy + RANGE_MAX * dy)])
-            inter = ray.intersection(poly)
-
-            if inter.is_empty:
-                expected = RANGE_MAX
-            elif inter.geom_type == "Point":
-                expected = Point(ox, oy).distance(inter)
-            elif inter.geom_type == "MultiPoint":
-                expected = min(Point(ox, oy).distance(p) for p in inter.geoms)
-            else:
-                expected = RANGE_MAX
-
-            diff = abs(r - expected)
-            if diff > 0.05:
-                mismatches += 1
-
+        fast = np.array(r_fast)
+        scalar = np.array(r_scalar)
+        mismatches = np.sum(np.abs(fast - scalar) > 0.01)
         mismatches_by_step.append(mismatches)
+
         if step < 5 or step % 20 == 0:
+            pose = w.get_obstacle_pose(0)
             print(f"  Step {step:3d}: mismatches={mismatches:3d}/{N_BEAMS}, "
                   f"theta={math.degrees(pose[2]):.1f}°")
 
-    total_mismatches = sum(mismatches_by_step)
-    total_beams = len(mismatches_by_step) * N_BEAMS
-    rate = total_mismatches / total_beams * 100
+    total = sum(mismatches_by_step)
+    rate = total / (len(mismatches_by_step) * N_BEAMS) * 100
 
-    print(f"\n  Total over {len(mismatches_by_step)} steps: "
-          f"mismatches={total_mismatches}/{total_beams} ({rate:.2f}%)")
-
-    assert rate < 5.0, (
-        f"LiDAR vs Shapely mismatch rate {rate:.2f}% exceeds 5%"
+    print(f"\n  Total: mismatches={total}/{len(mismatches_by_step)*N_BEAMS} ({rate:.2f}%)")
+    assert rate < 1.0, (
+        f"Fast vs scalar mismatch {rate:.2f}% exceeds 1%"
     )
     env.end(0)
 

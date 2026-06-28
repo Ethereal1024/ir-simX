@@ -154,6 +154,7 @@ int SimWorld::add_dynamic_polygon_obstacle(KinematicsType kin, float x, float y,
     dob.local_vertices = verts;
     dob.init_center_x = x;
     dob.init_center_y = y;
+    dob.init_theta = theta;
 
     // Add obstacle geometry to obstacles_
     polygon_vertices_.push_back(verts);
@@ -198,6 +199,7 @@ int SimWorld::add_dynamic_linestring_obstacle(KinematicsType kin, float x, float
     dob.local_linestring_verts = verts;
     dob.init_center_x = x;
     dob.init_center_y = y;
+    dob.init_theta = theta;
 
     // Add obstacle geometry to obstacles_
     polygon_vertices_.push_back(verts);
@@ -254,9 +256,8 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
             obs.theta = dob.theta;
         } else if (dob.shape_type == ShapeType::POLYGON) {
             if (dob.poly_verts_index == SIZE_MAX) continue;
-            float dx = dob.x - dob.init_center_x;
-            float dy = dob.y - dob.init_center_y;
-            float c = std::cos(dob.theta), s = std::sin(dob.theta);
+            float delta_theta = dob.theta - dob.init_theta;
+            float c = std::cos(delta_theta), s = std::sin(delta_theta);
             auto& pv = polygon_vertices_[dob.poly_verts_index];
             pv.resize(dob.local_vertices.size());
             obs.verts = pv.data();
@@ -270,9 +271,8 @@ void SimWorld::step_dynamic_obstacles(const float* obs_actions, int action_dim) 
             obs.center = {dob.x, dob.y};
         } else if (dob.shape_type == ShapeType::LINESTRING) {
             if (dob.poly_verts_index == SIZE_MAX) continue;
-            float dx = dob.x - dob.init_center_x;
-            float dy = dob.y - dob.init_center_y;
-            float c = std::cos(dob.theta), s = std::sin(dob.theta);
+            float delta_theta = dob.theta - dob.init_theta;
+            float c = std::cos(delta_theta), s = std::sin(delta_theta);
             auto& pv = polygon_vertices_[dob.poly_verts_index];
             pv.resize(dob.local_linestring_verts.size());
             obs.verts = pv.data();
