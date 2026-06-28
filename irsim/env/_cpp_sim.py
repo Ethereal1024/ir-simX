@@ -442,7 +442,7 @@ class CppSim:
         from irsim.world.sensors.lidar2d import Lidar2D as BaseLidar2D
 
         w = self._w
-        any_slow_needed = False
+        handled_ids: set[int] = set()
 
         for py_obj in self._env.objects:
             if py_obj.role != "robot":
@@ -451,23 +451,21 @@ class CppSim:
             if lidar is None:
                 continue
 
-            # Non-Lidar2D sensor → mark for slow path, skip robot
+            # Non-Lidar2D sensor → skip fast path, slow path will handle it
             if not isinstance(lidar, BaseLidar2D):
-                any_slow_needed = True
                 continue
 
             lidar_origin = getattr(lidar, "lidar_origin", None)
             if lidar_origin is None or lidar_origin.shape[0] < 3:
-                any_slow_needed = True
                 continue
 
             ox = float(lidar_origin[0, 0])
             oy = float(lidar_origin[1, 0])
             heading = float(lidar_origin[2, 0])
 
+            success = False
             try:
                 if getattr(lidar, "has_velocity", False):
-                    # FMCW or velocity-enabled LiDAR
                     sensor_vel = getattr(py_obj, "velocity_xy", [0.0, 0.0])
                     svx = float(np.asarray(sensor_vel).ravel()[0]) if hasattr(sensor_vel, '__len__') else 0.0
                     svy = float(np.asarray(sensor_vel).ravel()[1]) if hasattr(sensor_vel, '__len__') else 0.0
@@ -481,10 +479,8 @@ class CppSim:
                         lidar.range_data[:] = raw_r
                         lidar.radial_velocity[:] = raw_v
                         lidar.valid[:] = raw_r < lidar.range_max
-                    else:
-                        any_slow_needed = True
+                        success = True
                 else:
-                    # Standard LiDAR
                     raw = w.raycast_at(
                         ox, oy, heading,
                         lidar.angle_list.astype(np.float32),
@@ -497,17 +493,18 @@ class CppSim:
                             for i in range(lidar.number):
                                 if lidar.range_data[i] < lidar.range_max:
                                     lidar.range_data[i] += rng.normal(0, lidar.std)
-                    else:
-                        any_slow_needed = True
+                        success = True
             except Exception:
-                any_slow_needed = True
+                pass
 
-        if any_slow_needed:
-            self._env._objects_sensor_step()
+            if success:
+                handled_ids.add(id(py_obj))
 
-        # Run sensor_step for non-robot objects
+        # Slow path: sensor_step only for objects NOT handled by fast path
         for py_obj in self._env.objects:
-            if py_obj.role != "robot" and hasattr(py_obj, "sensor_step"):
+            if id(py_obj) in handled_ids:
+                continue
+            if hasattr(py_obj, "sensor_step"):
                 py_obj.sensor_step()
 
     def _sync(self) -> None:
