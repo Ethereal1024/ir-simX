@@ -411,10 +411,13 @@ class reciprocal_vel_obs:
             idx = (dx * dx + dy * dy).argmin()
             return vo_outside[idx]
 
-        arr = np.asarray(vo_inside)
-        scores = np.array([self.penalty(v, vel_des, self.factor) for v in arr])
-        idx = scores.argmin()
-        return vo_inside[idx]
+        if len(vo_inside) != 0:
+            arr = np.asarray(vo_inside)
+            scores = np.array([self.penalty(v, vel_des, self.factor) for v in arr])
+            idx = scores.argmin()
+            return vo_inside[idx]
+
+        return [0.0, 0.0]
 
     def penalty(self, vel, vel_des, factor):
         s = self.state
