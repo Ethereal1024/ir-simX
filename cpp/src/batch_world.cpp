@@ -182,23 +182,27 @@ void BatchSimWorld::compute_aabb_scalar(int env_id, AABB& out) const {
 void BatchSimWorld::step(const float* actions, int action_dim) {
     int bs = cfg_.batch_size;
 
-    // 1. Clip actions (SIMD per-chunk, sequentially for now)
+    // 1. Clip actions (SIMD per-chunk)
     batch_clip_actions(*this, actions, action_dim, 0, bs);
 
-    // 2. Step kinematics (SIMD per-chunk, sequentially for now)
-    switch (kin_type_) {
-    case KinematicsType::DIFF:
-        batch_step_diff(*this, 0, bs);
-        break;
-    case KinematicsType::OMNI:
-        batch_step_omni(*this, 0, bs);
-        break;
-    case KinematicsType::OMNI_ANGULAR:
-        batch_step_omni_angular(*this, 0, bs);
-        break;
-    case KinematicsType::ACKER:
-        batch_step_acker(*this, 0, bs);
-        break;
+    // 2. Step kinematics (SIMD per-chunk, parallel over chunks)
+    #pragma omp parallel for schedule(static, 1)
+    for (int chunk = 0; chunk < bs; chunk += SIMD_WIDTH) {
+        int n = std::min(SIMD_WIDTH, bs - chunk);
+        switch (kin_type_) {
+        case KinematicsType::DIFF:
+            batch_step_diff(*this, chunk, n);
+            break;
+        case KinematicsType::OMNI:
+            batch_step_omni(*this, chunk, n);
+            break;
+        case KinematicsType::OMNI_ANGULAR:
+            batch_step_omni_angular(*this, chunk, n);
+            break;
+        case KinematicsType::ACKER:
+            batch_step_acker(*this, chunk, n);
+            break;
+        }
     }
 
     // 3. Update trig arrays (OpenMP parallel for)
