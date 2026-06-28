@@ -259,7 +259,7 @@ inline bool intersect_ray_convex_polygon(
     bool ccw = area > 0;
 
     float t_enter = 0, t_exit = FLT_MAX;
-    bool has_enter = false;
+    bool has_enter = false, has_exit = false;
     for (int i = 0; i < n; i++) {
         const Vec2& a = verts[i];
         const Vec2& b = verts[(i + 1) % n];
@@ -272,18 +272,20 @@ inline bool intersect_ray_convex_polygon(
         float t = ao.dot({nx, ny}) / denom;
         if (std::abs(t) < 1e-10f) continue;  // ignore edge-on intersections at origin
         if (denom > 0) {
+            has_exit = true;
             if (t < t_exit) t_exit = t;
         } else {
             has_enter = true;
             if (t > t_enter) t_enter = t;
         }
     }
-    if (t_enter > t_exit) return false;
-    if (t_exit < 0) return false;
-    // If no entering edge found: origin is inside → hit at 0.
+    // Origin inside: no entering edges → hit at origin
     if (!has_enter) { t_out = 0; return true; }
-    // If all entering edges have t <= 0, the polygon is behind the origin.
-    if (t_enter <= 0) return false;
+    // No exiting edges: ray doesn't go through the polygon → miss
+    if (!has_exit) return false;
+    if (t_enter > t_exit) return false;   // enter after exit → miss
+    if (t_exit < 0) return false;          // exit before origin → miss
+    if (t_enter <= 0) return false;        // entering edges all behind → miss
     t_out = t_enter;
     return true;
 }

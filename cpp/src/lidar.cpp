@@ -49,22 +49,15 @@ void SpatialHashGrid::build(const Obstacle* obstacles, int n_obs, bool include_c
 
         } else if (obs.type == ShapeType::RECT) {
             if (include_cr) {
-                // Store as 4 segments (matching Python obj_to_c_dict behavior)
-                float c = std::cos(obs.theta), si = std::sin(obs.theta);
-                float cx = obs.center.x, cy = obs.center.y;
-                float hw = obs.half_w, hh = obs.half_h;
-                Vec2 v0{cx + hw * c - hh * si, cy + hw * si + hh * c};
-                Vec2 v1{cx - hw * c - hh * si, cy - hw * si + hh * c};
-                Vec2 v2{cx - hw * c + hh * si, cy - hw * si - hh * c};
-                Vec2 v3{cx + hw * c + hh * si, cy + hw * si - hh * c};
-                Vec2 edges[4][2] = {{v0, v1}, {v1, v2}, {v2, v3}, {v3, v0}};
-                for (int e = 0; e < 4; e++) {
-                    GridShape gs;
-                    gs.type = ShapeType::LINESTRING;
-                    gs.a = edges[e][0];
-                    gs.b = edges[e][1];
-                    shapes_.push_back(gs);
-                }
+                // Store as RECT with full shape info for Cyrus-Beck intersection
+                GridShape gs;
+                gs.type = ShapeType::RECT;
+                gs.center = obs.center;
+                gs.half_w = obs.half_w;
+                gs.half_h = obs.half_h;
+                gs.theta = obs.theta;
+                gs.aabb = obs.aabb;
+                shapes_.push_back(gs);
                 n_rect_++;
             }
             min_x = std::min(min_x, obs.aabb.min.x);
