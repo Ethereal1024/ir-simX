@@ -32,13 +32,18 @@ public:
     SpatialHashGrid() = default;
 
     // Build from obstacle list.  All shape types are indexed.
-    void build(const Obstacle* obstacles, int n_obs);
+    void build(const Obstacle* obstacles, int n_obs, bool include_cr = true);
 
     // Raycast: returns nearest intersection distance (limit if no hit).
     float raycast(Vec2 o, Vec2 d, float limit) const;
 
     bool empty() const { return shapes_.empty(); }
     int num_circle_rect() const { return n_circle_ + n_rect_; }
+
+    // C/R → SIMD threshold for AVX2 single-env path.
+    // When CIRCLE+RECT count ≤ this value, they use per-obstacle SIMD
+    // instead of the grid (which has overhead for small counts).
+    static constexpr int CR_SIMD_THRESHOLD = 50;
 
 private:
     float cell_size_ = DEFAULT_CELL_SIZE;

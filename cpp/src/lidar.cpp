@@ -11,7 +11,7 @@
 //  SpatialHashGrid — build & raycast (unified: all shapes)
 // ═══════════════════════════════════════════════════════════════
 
-void SpatialHashGrid::build(const Obstacle* obstacles, int n_obs) {
+void SpatialHashGrid::build(const Obstacle* obstacles, int n_obs, bool include_cr) {
     shapes_.clear();
     cells_.clear();
     n_circle_ = 0;
@@ -26,27 +26,38 @@ void SpatialHashGrid::build(const Obstacle* obstacles, int n_obs) {
         const auto& obs = obstacles[j];
 
         if (obs.type == ShapeType::CIRCLE) {
-            GridShape gs;
-            gs.type = ShapeType::CIRCLE;
-            gs.center = obs.center;
-            gs.radius = obs.radius;
-            shapes_.push_back(gs);
-            n_circle_++;
-            float cx = obs.center.x, cy = obs.center.y, r = obs.radius;
-            min_x = std::min(min_x, cx - r);
-            max_x = std::max(max_x, cx + r);
-            min_y = std::min(min_y, cy - r);
-            max_y = std::max(max_y, cy + r);
+            if (include_cr) {
+                GridShape gs;
+                gs.type = ShapeType::CIRCLE;
+                gs.center = obs.center;
+                gs.radius = obs.radius;
+                shapes_.push_back(gs);
+                n_circle_++;
+                float cx = obs.center.x, cy = obs.center.y, r = obs.radius;
+                min_x = std::min(min_x, cx - r);
+                max_x = std::max(max_x, cx + r);
+                min_y = std::min(min_y, cy - r);
+                max_y = std::max(max_y, cy + r);
+            } else {
+                // Still need AABB for grid sizing even if not indexing
+                float cx = obs.center.x, cy = obs.center.y, r = obs.radius;
+                min_x = std::min(min_x, cx - r);
+                max_x = std::max(max_x, cx + r);
+                min_y = std::min(min_y, cy - r);
+                max_y = std::max(max_y, cy + r);
+            }
 
         } else if (obs.type == ShapeType::RECT) {
-            GridShape gs;
-            gs.type = ShapeType::RECT;
-            gs.center = obs.center;
-            gs.half_w = obs.half_w;
-            gs.half_h = obs.half_h;
-            gs.aabb = obs.aabb;
-            shapes_.push_back(gs);
-            n_rect_++;
+            if (include_cr) {
+                GridShape gs;
+                gs.type = ShapeType::RECT;
+                gs.center = obs.center;
+                gs.half_w = obs.half_w;
+                gs.half_h = obs.half_h;
+                gs.aabb = obs.aabb;
+                shapes_.push_back(gs);
+                n_rect_++;
+            }
             min_x = std::min(min_x, obs.aabb.min.x);
             max_x = std::max(max_x, obs.aabb.max.x);
             min_y = std::min(min_y, obs.aabb.min.y);
@@ -292,7 +303,139 @@ void lidar_raycast_avx2(
 {
     for (int i = 0; i < n_beams; i++) ranges_out[i] = range_max;
 
-    // Phase 1: grid query for all obstacles (the grid includes all types)
+    // Count CIRCLE + RECT for dispatch decision
+    int n_cr = 0;
+    for (int j = 0; j < n_obs; j++) {
+        auto tt = obstacles[j].type;
+        if (tt == ShapeType::CIRCLE || tt == ShapeType::RECT) n_cr++;
+    }
+
+    // Grid covers C/R → use grid for everything
+    bool grid_has_cr = (grid && grid->num_circle_rect() > 0);
+    // Grid is polyline-only + C/R count is small → do SIMD for C/R
+    bool simd_cr = (!grid_has_cr && n_cr > 0 &&
+                    n_cr <= SpatialHashGrid::CR_SIMD_THRESHOLD);
+
+    if (simd_cr) {
+        // Phase 1a: per-obstacle SIMD for CIRCLE/RECT
+        for (int j = 0; j < n_obs; j++) {
+            const Obstacle& obs = obstacles[j];
+            if (!(obs.type == ShapeType::CIRCLE || obs.type == ShapeType::RECT)) continue;
+
+            __m256 rmax = _mm256_set1_ps(range_max);
+            __m256 zero = _mm256_setzero_ps();
+            __m256 sign_mask = _mm256_set1_ps(-0.0f);
+
+            __m256 oc_x = {}, oc_y = {}, r2 = {};
+            __m256 ox = {}, oy = {};
+            __m256 bxmin = {}, bxmax = {}, bymin = {}, bymax = {};
+            __m256 eps = {}, one = {}, fmax = {}, fmin = {};
+
+            if (obs.type == ShapeType::CIRCLE) {
+                oc_x = _mm256_set1_ps(obs.center.x - origin.x);
+                oc_y = _mm256_set1_ps(obs.center.y - origin.y);
+                r2   = _mm256_set1_ps(obs.radius * obs.radius);
+            } else {
+                ox = _mm256_set1_ps(origin.x);
+                oy = _mm256_set1_ps(origin.y);
+                bxmin = _mm256_set1_ps(obs.aabb.min.x);
+                bxmax = _mm256_set1_ps(obs.aabb.max.x);
+                bymin = _mm256_set1_ps(obs.aabb.min.y);
+                bymax = _mm256_set1_ps(obs.aabb.max.y);
+                eps = _mm256_set1_ps(1e-12f);
+                one = _mm256_set1_ps(1.0f);
+                fmax = _mm256_set1_ps(FLT_MAX);
+                fmin = _mm256_set1_ps(-FLT_MAX);
+            }
+
+            for (int i = 0; i < n_beams; i += 8) {
+                int remaining = n_beams - i;
+                int k = (remaining < 8) ? remaining : 8;
+
+                float angle_full[8], cs_buf[8], sn_buf[8];
+                for (int t = 0; t < k; t++) angle_full[t] = angles[i + t] + heading;
+                sincos_8(angle_full, cs_buf, sn_buf);
+                __m256 dx = _mm256_loadu_ps(cs_buf);
+                __m256 dy = _mm256_loadu_ps(sn_buf);
+
+                __m256 t_hit, hit_ok;
+
+                if (obs.type == ShapeType::CIRCLE) {
+                    __m256 b = _mm256_fmadd_ps(dy, oc_y, _mm256_mul_ps(dx, oc_x));
+                    b = _mm256_mul_ps(b, _mm256_set1_ps(-2.0f));
+                    __m256 c_v = _mm256_fmadd_ps(oc_x, oc_x, _mm256_mul_ps(oc_y, oc_y));
+                    c_v = _mm256_sub_ps(c_v, r2);
+                    __m256 disc = _mm256_fmadd_ps(b, b, _mm256_mul_ps(c_v, _mm256_set1_ps(-4.0f)));
+                    __m256 sqrt_disc = _mm256_sqrt_ps(_mm256_max_ps(disc, zero));
+                    __m256 neg_b = _mm256_xor_ps(b, sign_mask);
+                    __m256 t1 = _mm256_mul_ps(_mm256_sub_ps(neg_b, sqrt_disc), _mm256_set1_ps(0.5f));
+                    __m256 t2 = _mm256_mul_ps(_mm256_add_ps(neg_b, sqrt_disc), _mm256_set1_ps(0.5f));
+                    __m256 invalid = _mm256_cmp_ps(disc, zero, _CMP_LT_OS);
+                    __m256 t1_ok = _mm256_cmp_ps(t1, zero, _CMP_GE_OS);
+                    __m256 t2_ok = _mm256_cmp_ps(t2, zero, _CMP_GE_OS);
+                    t_hit = _mm256_blendv_ps(t2, t1, t1_ok);
+                    hit_ok = _mm256_andnot_ps(invalid, _mm256_or_ps(t1_ok, t2_ok));
+                } else {
+                    __m256 dx_abs = _mm256_andnot_ps(sign_mask, dx);
+                    __m256 dy_abs = _mm256_andnot_ps(sign_mask, dy);
+                    __m256 dx_ok = _mm256_cmp_ps(dx_abs, eps, _CMP_GT_OS);
+                    __m256 dy_ok = _mm256_cmp_ps(dy_abs, eps, _CMP_GT_OS);
+
+                    __m256 inv_dx = _mm256_div_ps(one, _mm256_blendv_ps(one, dx, dx_ok));
+                    __m256 tmin_x = _mm256_mul_ps(_mm256_sub_ps(bxmin, ox), inv_dx);
+                    __m256 tmax_x = _mm256_mul_ps(_mm256_sub_ps(bxmax, ox), inv_dx);
+                    {
+                        __m256 lo = _mm256_min_ps(tmin_x, tmax_x);
+                        __m256 hi = _mm256_max_ps(tmin_x, tmax_x);
+                        tmin_x = lo; tmax_x = hi;
+                    }
+                    __m256 inv_dy = _mm256_div_ps(one, _mm256_blendv_ps(one, dy, dy_ok));
+                    __m256 tmin_y = _mm256_mul_ps(_mm256_sub_ps(bymin, oy), inv_dy);
+                    __m256 tmax_y = _mm256_mul_ps(_mm256_sub_ps(bymax, oy), inv_dy);
+                    {
+                        __m256 lo = _mm256_min_ps(tmin_y, tmax_y);
+                        __m256 hi = _mm256_max_ps(tmin_y, tmax_y);
+                        tmin_y = lo; tmax_y = hi;
+                    }
+
+                    __m256 ox_in = _mm256_and_ps(_mm256_cmp_ps(ox, bxmin, _CMP_GE_OS),
+                                                  _mm256_cmp_ps(ox, bxmax, _CMP_LE_OS));
+                    __m256 oy_in = _mm256_and_ps(_mm256_cmp_ps(oy, bymin, _CMP_GE_OS),
+                                                  _mm256_cmp_ps(oy, bymax, _CMP_LE_OS));
+                    tmin_x = _mm256_blendv_ps(_mm256_blendv_ps(fmax, fmin, ox_in), tmin_x, dx_ok);
+                    tmax_x = _mm256_blendv_ps(_mm256_blendv_ps(fmin, fmax, ox_in), tmax_x, dx_ok);
+                    tmin_y = _mm256_blendv_ps(_mm256_blendv_ps(fmax, fmin, oy_in), tmin_y, dy_ok);
+                    tmax_y = _mm256_blendv_ps(_mm256_blendv_ps(fmin, fmax, oy_in), tmax_y, dy_ok);
+
+                    t_hit = _mm256_max_ps(tmin_x, tmin_y);
+                    __m256 t_exit = _mm256_min_ps(tmax_x, tmax_y);
+                    hit_ok = _mm256_cmp_ps(t_hit, t_exit, _CMP_LE_OS);
+                    __m256 texit_ok = _mm256_cmp_ps(t_exit, zero, _CMP_GE_OS);
+                    hit_ok = _mm256_and_ps(hit_ok, texit_ok);
+                }
+
+                t_hit = _mm256_max_ps(t_hit, zero);
+                t_hit = _mm256_min_ps(t_hit, rmax);
+
+                __m256 cur = _mm256_loadu_ps(ranges_out + i);
+                __m256 closer = _mm256_cmp_ps(t_hit, cur, _CMP_LT_OS);
+                __m256 mask = _mm256_and_ps(closer, hit_ok);
+                __m256 new_val = _mm256_blendv_ps(cur, t_hit, mask);
+
+                if (k < 8) {
+                    int mask_int = (1 << k) - 1;
+                    __m256i blend_mask = _mm256_set_epi32(
+                        ((mask_int >> 7) & 1) ? -1 : 0, ((mask_int >> 6) & 1) ? -1 : 0,
+                        ((mask_int >> 5) & 1) ? -1 : 0, ((mask_int >> 4) & 1) ? -1 : 0,
+                        ((mask_int >> 3) & 1) ? -1 : 0, ((mask_int >> 2) & 1) ? -1 : 0,
+                        ((mask_int >> 1) & 1) ? -1 : 0, ((mask_int >> 0) & 1) ? -1 : 0);
+                    new_val = _mm256_blendv_ps(_mm256_loadu_ps(ranges_out + i),
+                                                new_val, _mm256_castsi256_ps(blend_mask));
+                }
+                _mm256_storeu_ps(ranges_out + i, new_val);
+            }
+        }
+    }
     if (grid && !grid->empty()) {
         for (int i = 0; i < n_beams; i++) {
             float angle = angles[i] + heading;
@@ -302,9 +445,10 @@ void lidar_raycast_avx2(
             if (t < best) ranges_out[i] = t;
         }
     } else {
-        // No grid — full scalar fallback for everything (should not happen in normal use)
+        // No grid — scalar fallback for poly/linestring only (C/R already done by SIMD)
         for (int j = 0; j < n_obs; j++) {
             const auto& obs = obstacles[j];
+            if (obs.type == ShapeType::CIRCLE || obs.type == ShapeType::RECT) continue;
             for (int i = 0; i < n_beams; i++) {
                 float angle = angles[i] + heading;
                 Vec2 dir{std::cos(angle), std::sin(angle)};
@@ -527,9 +671,15 @@ void lidar_raycast(
     const Obstacle* obstacles, int n_obs,
     float* ranges_out)
 {
-    // Build full grid (all shape types) for all paths (AVX2 and scalar)
+    // Count CIRCLE+RECT to decide grid build mode
+    int n_cr = 0;
+    for (int j = 0; j < n_obs; j++) {
+        auto tt = obstacles[j].type;
+        if (tt == ShapeType::CIRCLE || tt == ShapeType::RECT) n_cr++;
+    }
+    bool build_full_grid = (n_cr > SpatialHashGrid::CR_SIMD_THRESHOLD);
     SpatialHashGrid grid;
-    grid.build(obstacles, n_obs);
+    grid.build(obstacles, n_obs, build_full_grid);
     lidar_raycast_avx2(origin, heading, angles, n_beams, range_max,
                        obstacles, n_obs, ranges_out,
                        grid.empty() ? nullptr : &grid);
