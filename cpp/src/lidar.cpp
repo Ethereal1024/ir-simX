@@ -215,12 +215,16 @@ float SpatialHashGrid::raycast(Vec2 o, Vec2 d, float limit) const {
                     Vec2 ao = s.a - o;
                     t_val = ao.cross(ab) / denom;
                     float u = ao.cross(d) / denom;
-                    if (t_val <= 1e-6f || u < -1e-6f || u > 1.0f + 1e-6f) {
-                        if (std::abs(t_val) > 1e-6f) continue;
+                    // Valid intersection: segment is in front (t_val > 0)
+                    // and hit point is within segment bounds (u in [0, 1])
+                    if (t_val > 1e-6f && u >= -1e-6f && u <= 1.0f + 1e-6f) {
+                        // normal hit
+                    } else if (std::abs(t_val) <= 1e-6f && u >= -1e-6f && u <= 1.0f + 1e-6f) {
                         // origin on segment
                         t_val = 0;
+                    } else {
+                        continue;
                     }
-                    if (t_val < 0) continue;
                 }
 
                 if (t_val < limit) {
