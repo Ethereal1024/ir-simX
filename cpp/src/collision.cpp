@@ -98,18 +98,17 @@ bool check_robot_obstacle_collision(
             check_verts = tmp;
         }
 
-        AABB rbox{obs.center - Vec2{obs.half_w, obs.half_h},
-                   obs.center + Vec2{obs.half_w, obs.half_h}};
-        // Quick check: any robot vertex inside rect?
-        for (int i = 0; i < n_robot; i++) {
-            if (check_verts[i].x >= rbox.min.x && check_verts[i].x <= rbox.max.x &&
-                check_verts[i].y >= rbox.min.y && check_verts[i].y <= rbox.max.y)
-                return true;
-        }
-        // SAT for edge-edge intersection
+        // Actual rotated rect vertices
+        float c_theta = std::cos(obs.theta);
+        float s_theta = std::sin(obs.theta);
+        float cx = obs.center.x, cy = obs.center.y;
+        float hw = obs.half_w, hh = obs.half_h;
         Vec2 rverts[4] = {
-            {rbox.min.x, rbox.min.y}, {rbox.max.x, rbox.min.y},
-            {rbox.max.x, rbox.max.y}, {rbox.min.x, rbox.max.y}};
+            {cx + hw * c_theta - hh * s_theta, cy + hw * s_theta + hh * c_theta},
+            {cx - hw * c_theta - hh * s_theta, cy - hw * s_theta + hh * c_theta},
+            {cx - hw * c_theta + hh * s_theta, cy - hw * s_theta - hh * c_theta},
+            {cx + hw * c_theta + hh * s_theta, cy + hw * s_theta - hh * c_theta},
+        };
         return sat_intersect(check_verts, n_robot, rverts, 4);
     }
     case ShapeType::POLYGON:

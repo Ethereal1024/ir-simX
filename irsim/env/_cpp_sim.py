@@ -455,9 +455,14 @@ class CppSim:
             if not isinstance(lidar, BaseLidar2D):
                 continue
 
-            lidar_origin = getattr(lidar, "lidar_origin", None)
-            if lidar_origin is None or lidar_origin.shape[0] < 3:
+            offset = getattr(lidar, "offset", None)
+            if offset is None or offset.shape[0] < 3:
                 continue
+
+            state = py_obj.state
+            from irsim.util.util import transform_point_with_state
+            lidar_origin = transform_point_with_state(offset, state)
+            lidar.lidar_origin = lidar_origin
 
             ox = float(lidar_origin[0, 0])
             oy = float(lidar_origin[1, 0])
