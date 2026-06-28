@@ -20,6 +20,7 @@ struct GridShape {
     float radius;
     // RECT
     float half_w, half_h;
+    float theta;  // rotation angle
     AABB aabb;
     // SEGMENT (from polygon/linestring edges)
     Vec2 a, b;

@@ -49,13 +49,22 @@ void SpatialHashGrid::build(const Obstacle* obstacles, int n_obs, bool include_c
 
         } else if (obs.type == ShapeType::RECT) {
             if (include_cr) {
-                GridShape gs;
-                gs.type = ShapeType::RECT;
-                gs.center = obs.center;
-                gs.half_w = obs.half_w;
-                gs.half_h = obs.half_h;
-                gs.aabb = obs.aabb;
-                shapes_.push_back(gs);
+                // Store as 4 segments (matching Python obj_to_c_dict behavior)
+                float c = std::cos(obs.theta), si = std::sin(obs.theta);
+                float cx = obs.center.x, cy = obs.center.y;
+                float hw = obs.half_w, hh = obs.half_h;
+                Vec2 v0{cx + hw * c - hh * si, cy + hw * si + hh * c};
+                Vec2 v1{cx - hw * c - hh * si, cy - hw * si + hh * c};
+                Vec2 v2{cx - hw * c + hh * si, cy - hw * si - hh * c};
+                Vec2 v3{cx + hw * c + hh * si, cy + hw * si - hh * c};
+                Vec2 edges[4][2] = {{v0, v1}, {v1, v2}, {v2, v3}, {v3, v0}};
+                for (int e = 0; e < 4; e++) {
+                    GridShape gs;
+                    gs.type = ShapeType::LINESTRING;
+                    gs.a = edges[e][0];
+                    gs.b = edges[e][1];
+                    shapes_.push_back(gs);
+                }
                 n_rect_++;
             }
             min_x = std::min(min_x, obs.aabb.min.x);
@@ -184,33 +193,19 @@ float SpatialHashGrid::raycast(Vec2 o, Vec2 d, float limit) const {
                     if (t_val < 0) continue;
 
                 } else if (s.type == ShapeType::RECT) {
-                    // Axis-aligned slab test
-                    if (std::abs(d.x) > 1e-12f) {
-                        float t1 = (s.aabb.min.x - o.x) / d.x;
-                        float t2 = (s.aabb.max.x - o.x) / d.x;
-                        float tmin = std::min(t1, t2);
-                        float tmax = std::max(t1, t2);
-                        if (std::abs(d.y) > 1e-12f) {
-                            float t3 = (s.aabb.min.y - o.y) / d.y;
-                            float t4 = (s.aabb.max.y - o.y) / d.y;
-                            tmin = std::max(tmin, std::min(t3, t4));
-                            tmax = std::min(tmax, std::max(t3, t4));
-                        } else if (o.y < s.aabb.min.y || o.y > s.aabb.max.y) {
-                            continue;
-                        }
-                        if (tmin > tmax || tmax < 0) continue;
-                        t_val = std::max(0.0f, tmin);
-                    } else {
-                        if (o.x < s.aabb.min.x || o.x > s.aabb.max.x) continue;
-                        if (std::abs(d.y) > 1e-12f) {
-                            float t1 = (s.aabb.min.y - o.y) / d.y;
-                            float t2 = (s.aabb.max.y - o.y) / d.y;
-                            t_val = std::max(0.0f, std::min(t1, t2));
-                            if (std::max(t1, t2) < 0) continue;
-                        } else {
-                            continue;
-                        }
-                    }
+                    // RECT stored as 4 segments; this branch is no longer reached.
+                    // Safety fallback: Cyrus-Beck on the 4 actual vertices.
+                    float c = std::cos(s.theta), si = std::sin(s.theta);
+                    float hw = s.half_w, hh = s.half_h;
+                    float cx = s.center.x, cy = s.center.y;
+                    Vec2 rverts[4] = {
+                        {cx + hw * c - hh * si, cy + hw * si + hh * c},
+                        {cx - hw * c - hh * si, cy - hw * si + hh * c},
+                        {cx - hw * c + hh * si, cy - hw * si - hh * c},
+                        {cx + hw * c + hh * si, cy + hw * si - hh * c},
+                    };
+                    if (!intersect_ray_convex_polygon(o, d, rverts, 4, t_val))
+                        continue;
 
                 } else {
                     // SEGMENT (polygon/linestring edge)
@@ -317,36 +312,42 @@ void lidar_raycast_avx2(
                     n_cr <= SpatialHashGrid::CR_SIMD_THRESHOLD);
 
     if (simd_cr) {
-        // Phase 1a: per-obstacle SIMD for CIRCLE/RECT
+        // Phase 1a: per-obstacle SIMD for CIRCLE, scalar Cyrus-Beck for RECT
         for (int j = 0; j < n_obs; j++) {
             const Obstacle& obs = obstacles[j];
             if (!(obs.type == ShapeType::CIRCLE || obs.type == ShapeType::RECT)) continue;
+
+            if (obs.type == ShapeType::RECT) {
+                // Rotated rect: scalar per-beam Cyrus-Beck (SIMD doesn't apply)
+                float c = std::cos(obs.theta), si = std::sin(obs.theta);
+                float cx = obs.center.x, cy = obs.center.y;
+                float hw = obs.half_w, hh = obs.half_h;
+                Vec2 rverts[4] = {
+                    {cx + hw * c - hh * si, cy + hw * si + hh * c},
+                    {cx - hw * c - hh * si, cy - hw * si + hh * c},
+                    {cx - hw * c + hh * si, cy - hw * si - hh * c},
+                    {cx + hw * c + hh * si, cy + hw * si - hh * c},
+                };
+                for (int i = 0; i < n_beams; i++) {
+                    float angle = angles[i] + heading;
+                    Vec2 dir{std::cos(angle), std::sin(angle)};
+                    float t;
+                    if (intersect_ray_convex_polygon(origin, dir, rverts, 4, t)) {
+                        if (t < ranges_out[i]) ranges_out[i] = t;
+                    }
+                }
+                continue;
+            }
 
             __m256 rmax = _mm256_set1_ps(range_max);
             __m256 zero = _mm256_setzero_ps();
             __m256 sign_mask = _mm256_set1_ps(-0.0f);
 
             __m256 oc_x = {}, oc_y = {}, r2 = {};
-            __m256 ox = {}, oy = {};
-            __m256 bxmin = {}, bxmax = {}, bymin = {}, bymax = {};
-            __m256 eps = {}, one = {}, fmax = {}, fmin = {};
 
-            if (obs.type == ShapeType::CIRCLE) {
-                oc_x = _mm256_set1_ps(obs.center.x - origin.x);
-                oc_y = _mm256_set1_ps(obs.center.y - origin.y);
-                r2   = _mm256_set1_ps(obs.radius * obs.radius);
-            } else {
-                ox = _mm256_set1_ps(origin.x);
-                oy = _mm256_set1_ps(origin.y);
-                bxmin = _mm256_set1_ps(obs.aabb.min.x);
-                bxmax = _mm256_set1_ps(obs.aabb.max.x);
-                bymin = _mm256_set1_ps(obs.aabb.min.y);
-                bymax = _mm256_set1_ps(obs.aabb.max.y);
-                eps = _mm256_set1_ps(1e-12f);
-                one = _mm256_set1_ps(1.0f);
-                fmax = _mm256_set1_ps(FLT_MAX);
-                fmin = _mm256_set1_ps(-FLT_MAX);
-            }
+            oc_x = _mm256_set1_ps(obs.center.x - origin.x);
+            oc_y = _mm256_set1_ps(obs.center.y - origin.y);
+            r2   = _mm256_set1_ps(obs.radius * obs.radius);
 
             for (int i = 0; i < n_beams; i += 8) {
                 int remaining = n_beams - i;
@@ -359,60 +360,20 @@ void lidar_raycast_avx2(
                 __m256 dy = _mm256_loadu_ps(sn_buf);
 
                 __m256 t_hit, hit_ok;
-
-                if (obs.type == ShapeType::CIRCLE) {
-                    __m256 b = _mm256_fmadd_ps(dy, oc_y, _mm256_mul_ps(dx, oc_x));
-                    b = _mm256_mul_ps(b, _mm256_set1_ps(-2.0f));
-                    __m256 c_v = _mm256_fmadd_ps(oc_x, oc_x, _mm256_mul_ps(oc_y, oc_y));
-                    c_v = _mm256_sub_ps(c_v, r2);
-                    __m256 disc = _mm256_fmadd_ps(b, b, _mm256_mul_ps(c_v, _mm256_set1_ps(-4.0f)));
-                    __m256 sqrt_disc = _mm256_sqrt_ps(_mm256_max_ps(disc, zero));
-                    __m256 neg_b = _mm256_xor_ps(b, sign_mask);
-                    __m256 t1 = _mm256_mul_ps(_mm256_sub_ps(neg_b, sqrt_disc), _mm256_set1_ps(0.5f));
-                    __m256 t2 = _mm256_mul_ps(_mm256_add_ps(neg_b, sqrt_disc), _mm256_set1_ps(0.5f));
-                    __m256 invalid = _mm256_cmp_ps(disc, zero, _CMP_LT_OS);
-                    __m256 t1_ok = _mm256_cmp_ps(t1, zero, _CMP_GE_OS);
-                    __m256 t2_ok = _mm256_cmp_ps(t2, zero, _CMP_GE_OS);
-                    t_hit = _mm256_blendv_ps(t2, t1, t1_ok);
-                    hit_ok = _mm256_andnot_ps(invalid, _mm256_or_ps(t1_ok, t2_ok));
-                } else {
-                    __m256 dx_abs = _mm256_andnot_ps(sign_mask, dx);
-                    __m256 dy_abs = _mm256_andnot_ps(sign_mask, dy);
-                    __m256 dx_ok = _mm256_cmp_ps(dx_abs, eps, _CMP_GT_OS);
-                    __m256 dy_ok = _mm256_cmp_ps(dy_abs, eps, _CMP_GT_OS);
-
-                    __m256 inv_dx = _mm256_div_ps(one, _mm256_blendv_ps(one, dx, dx_ok));
-                    __m256 tmin_x = _mm256_mul_ps(_mm256_sub_ps(bxmin, ox), inv_dx);
-                    __m256 tmax_x = _mm256_mul_ps(_mm256_sub_ps(bxmax, ox), inv_dx);
-                    {
-                        __m256 lo = _mm256_min_ps(tmin_x, tmax_x);
-                        __m256 hi = _mm256_max_ps(tmin_x, tmax_x);
-                        tmin_x = lo; tmax_x = hi;
-                    }
-                    __m256 inv_dy = _mm256_div_ps(one, _mm256_blendv_ps(one, dy, dy_ok));
-                    __m256 tmin_y = _mm256_mul_ps(_mm256_sub_ps(bymin, oy), inv_dy);
-                    __m256 tmax_y = _mm256_mul_ps(_mm256_sub_ps(bymax, oy), inv_dy);
-                    {
-                        __m256 lo = _mm256_min_ps(tmin_y, tmax_y);
-                        __m256 hi = _mm256_max_ps(tmin_y, tmax_y);
-                        tmin_y = lo; tmax_y = hi;
-                    }
-
-                    __m256 ox_in = _mm256_and_ps(_mm256_cmp_ps(ox, bxmin, _CMP_GE_OS),
-                                                  _mm256_cmp_ps(ox, bxmax, _CMP_LE_OS));
-                    __m256 oy_in = _mm256_and_ps(_mm256_cmp_ps(oy, bymin, _CMP_GE_OS),
-                                                  _mm256_cmp_ps(oy, bymax, _CMP_LE_OS));
-                    tmin_x = _mm256_blendv_ps(_mm256_blendv_ps(fmax, fmin, ox_in), tmin_x, dx_ok);
-                    tmax_x = _mm256_blendv_ps(_mm256_blendv_ps(fmin, fmax, ox_in), tmax_x, dx_ok);
-                    tmin_y = _mm256_blendv_ps(_mm256_blendv_ps(fmax, fmin, oy_in), tmin_y, dy_ok);
-                    tmax_y = _mm256_blendv_ps(_mm256_blendv_ps(fmin, fmax, oy_in), tmax_y, dy_ok);
-
-                    t_hit = _mm256_max_ps(tmin_x, tmin_y);
-                    __m256 t_exit = _mm256_min_ps(tmax_x, tmax_y);
-                    hit_ok = _mm256_cmp_ps(t_hit, t_exit, _CMP_LE_OS);
-                    __m256 texit_ok = _mm256_cmp_ps(t_exit, zero, _CMP_GE_OS);
-                    hit_ok = _mm256_and_ps(hit_ok, texit_ok);
-                }
+                __m256 b = _mm256_fmadd_ps(dy, oc_y, _mm256_mul_ps(dx, oc_x));
+                b = _mm256_mul_ps(b, _mm256_set1_ps(-2.0f));
+                __m256 c_v = _mm256_fmadd_ps(oc_x, oc_x, _mm256_mul_ps(oc_y, oc_y));
+                c_v = _mm256_sub_ps(c_v, r2);
+                __m256 disc = _mm256_fmadd_ps(b, b, _mm256_mul_ps(c_v, _mm256_set1_ps(-4.0f)));
+                __m256 sqrt_disc = _mm256_sqrt_ps(_mm256_max_ps(disc, zero));
+                __m256 neg_b = _mm256_xor_ps(b, sign_mask);
+                __m256 t1 = _mm256_mul_ps(_mm256_sub_ps(neg_b, sqrt_disc), _mm256_set1_ps(0.5f));
+                __m256 t2 = _mm256_mul_ps(_mm256_add_ps(neg_b, sqrt_disc), _mm256_set1_ps(0.5f));
+                __m256 invalid = _mm256_cmp_ps(disc, zero, _CMP_LT_OS);
+                __m256 t1_ok = _mm256_cmp_ps(t1, zero, _CMP_GE_OS);
+                __m256 t2_ok = _mm256_cmp_ps(t2, zero, _CMP_GE_OS);
+                t_hit = _mm256_blendv_ps(t2, t1, t1_ok);
+                hit_ok = _mm256_andnot_ps(invalid, _mm256_or_ps(t1_ok, t2_ok));
 
                 t_hit = _mm256_max_ps(t_hit, zero);
                 t_hit = _mm256_min_ps(t_hit, rmax);
