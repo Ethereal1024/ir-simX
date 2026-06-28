@@ -1052,5 +1052,49 @@ def test_set_goal_text_updates_artist():
     env.end()
 
 
+def test_lidar_origin_sync():
+    """lidar_origin must track robot state + offset after each step."""
+    from irsim.util.util import transform_point_with_state
+
+    env = irsim.make("test_all_objects.yaml", display=False)
+    for _ in range(30):
+        env.step()
+        lidar = env.robot.lidar
+        state = env.robot.state
+        expected = transform_point_with_state(lidar.offset, state)
+        assert np.allclose(lidar.lidar_origin, expected, atol=1e-6), (
+            f"lidar_origin {lidar.lidar_origin.ravel()} != expected {expected.ravel()}"
+        )
+    env.end()
+
+
+def test_lidar_data_consistency():
+    """Fast path results must match the old Python dict path within tolerance.
+
+    This tests that _fast_sensor_step (using SimWorld::raycast_at) produces
+    results consistent with the traditional _objects_sensor_step (which builds
+    obstacle dicts from Python objects and calls the standalone lidar_raycast).
+    """
+    env = irsim.make("test_all_objects.yaml", display=False)
+    for _ in range(10):
+        env.step()
+
+    lidar = env.robot.lidar
+    fast_data = lidar.range_data.copy()
+
+    # Re-run through old Python dict path
+    env._objects_sensor_step()
+    old_data = lidar.range_data.copy()
+
+    # Allow small floating point differences (DDA vs segment intersection)
+    mismatch = np.sum(np.abs(fast_data - old_data) > 0.05)
+    mismatch_ratio = mismatch / len(fast_data)
+
+    assert mismatch_ratio < 0.05, (
+        f"{mismatch}/{len(fast_data)} beams mismatch ({mismatch_ratio:.1%})"
+    )
+    env.end()
+
+
 if __name__ == "__main__":
     pytest.main(["--cov=.", "--cov-report", "html", "-v", __file__])

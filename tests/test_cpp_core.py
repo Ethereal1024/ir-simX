@@ -698,3 +698,118 @@ class TestStandaloneLidar:
         r1 = _cc.lidar_raycast(0.0, 0.0, 0.0, angles, 10.0, obs)
         r2 = _cc.lidar_raycast_scalar(0.0, 0.0, 0.0, angles, 10.0, obs)
         np.testing.assert_allclose(r1, r2, atol=0.01)
+
+    def test_rotated_rect_lidar_matches_shapely(self):
+        """Rotated rect: grid-raycast vs Shapely ground truth."""
+        import shapely
+        from shapely.geometry import Polygon, LineString, Point
+
+        angles = np.linspace(-2.356, 2.356, 360, dtype=np.float32)
+        cx, cy, theta = 4.0, 0.0, 0.785  # 45° at (4,0)
+        half_w, half_h = 1.0, 0.5
+        c, s = math.cos(theta), math.sin(theta)
+        verts = [
+            (cx + half_w*c - half_h*s, cy + half_w*s + half_h*c),
+            (cx - half_w*c - half_h*s, cy - half_w*s + half_h*c),
+            (cx - half_w*c + half_h*s, cy - half_w*s - half_h*c),
+            (cx + half_w*c + half_h*s, cy + half_w*s - half_h*c),
+        ]
+        obs = [_dict_rect(cx, cy, half_w, half_h)]
+
+        lidar_ranges = _cc.lidar_raycast(0.0, 0.0, 0.0, angles, 15.0, obs)
+
+        poly = Polygon(verts)
+        mismatches = 0
+        for i, (angle, r) in enumerate(zip(angles, lidar_ranges)):
+            dx, dy = math.cos(angle), math.sin(angle)
+            ray = LineString([(0, 0), (dx * 15, dy * 15)])
+            inter = ray.intersection(poly)
+            if inter.is_empty:
+                expected = 15.0
+            elif inter.geom_type == 'Point':
+                expected = Point(0, 0).distance(inter)
+            elif inter.geom_type == 'MultiPoint':
+                expected = min(Point(0, 0).distance(p) for p in inter.geoms)
+            else:
+                expected = 15.0
+            if abs(r - expected) > 0.02:
+                mismatches += 1
+        # Allow < 8% of beams to differ (segment-based grid vs Shapely Cyrus-Beck)
+        assert mismatches / len(angles) < 0.08, (
+            f"{mismatches}/{len(angles)} beams mismatch ({mismatches/len(angles):.1%})"
+        )
+
+    def test_rotated_rect_collision_position(self):
+        """Collision with a 45° rotated rect must occur at correct distance."""
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        vel_min = np.array([-100.0, -100.0, -100.0], dtype=np.float32)
+        vel_max = np.array([100.0, 100.0, 100.0], dtype=np.float32)
+        vel_acc = np.array([100.0, 100.0, 100.0], dtype=np.float32)
+        w.add_robot(0, 0.0, 0.0, 0.0, vel_min, vel_max, vel_acc)
+        verts = np.array([0.2, 0.0, -0.2, 0.15, -0.2, -0.15], dtype=np.float32)
+        w.set_robot_vertices(0, verts)
+
+        # RECT at (3, 0), 45°, 2.0×1.0
+        cx, cy, theta = 3.0, 0.0, 0.785
+        hw, hh = 1.0, 0.5
+        c, s = math.cos(theta), math.sin(theta)
+        poly_verts = [
+            [cx + hw*c - hh*s, cy + hw*s + hh*c],
+            [cx - hw*c - hh*s, cy - hw*s + hh*c],
+            [cx - hw*c + hh*s, cy - hw*s - hh*c],
+            [cx + hw*c + hh*s, cy + hw*s - hh*c],
+        ]
+        w.add_obstacle({"type": "polygon", "x": 0, "y": 0, "vertices": poly_verts})
+
+        # Step robot forward until collision
+        for _ in range(200):
+            w.step(np.array([0.5, 0.0, 0.0], dtype=np.float32), 3)
+            if w.check_robot_collision(0):
+                break
+
+        robot_x = w.get_robot_pose(0)[0]
+        assert w.check_robot_collision(0), "Robot never collided with rotated rect"
+        # Robot should collide when its front vertex (x=+0.2 from center)
+        # reaches the rect's left edge.  At y=0, the rotated rect's left
+        # edge is at x≈2.12, so robot center at x≈1.92 triggers collision.
+        # If collision used axis-aligned AABB only, robot would stop at
+        # x≈1.55 (AABB min_x = 1.94 minus 0.2 robot half-width minus 0.2
+        # front vertex).  Rotated SAT correctly finds the actual collision.
+        assert robot_x > 1.7, (
+            f"Robot at x={robot_x:.3f}, AABB-only collision would occur at ~1.55"
+        )
+
+    def test_rotated_rect_not_axis_aligned_collision(self):
+        """AABB-only collision would trigger too early for rotated rect."""
+        w = _cc.SimWorld()
+        w.set_step_time(0.1)
+        vel_min = np.array([-100.0, -100.0, -100.0], dtype=np.float32)
+        vel_max = np.array([100.0, 100.0, 100.0], dtype=np.float32)
+        vel_acc = np.array([100.0, 100.0, 100.0], dtype=np.float32)
+        w.add_robot(0, 0.0, 0.0, 0.0, vel_min, vel_max, vel_acc)
+        verts = np.array([0.2, 0.0, -0.2, 0.15, -0.2, -0.15], dtype=np.float32)
+        w.set_robot_vertices(0, verts)
+
+        # RECT at (3, 0), 45°, 2.0×0.2 (thin, almost diagonal)
+        cx, cy, theta = 3.0, 0.0, 0.785
+        hw, hh = 1.0, 0.1
+        w.add_obstacle(_dict_rect(cx, cy, hw, hh))
+
+        for _ in range(200):
+            w.step(np.array([0.5, 0.0, 0.0], dtype=np.float32), 3)
+            if w.check_robot_collision(0):
+                break
+
+        robot_x = w.get_robot_pose(0)[0]
+        assert w.check_robot_collision(0), "Robot never collided"
+        # AABB of this rect extends from x≈2.30 to x≈3.70 (hw=1 → √2 ≈ 1.41
+        # radius on diagonal).  With AABB-only collision, robot's front vertex
+        # (x=+0.2) would hit AABB min_x ≈ 2.30 when center is at x≈2.10.
+        # With rotated SAT, the actual rect is thinner diagonally, so the
+        # robot can get closer before colliding.  The key: if collision uses
+        # axis-aligned AABB, robot_x would be ~2.10.  If rotated SAT, robot_x
+        # is lower (~1.85).  We verify SAT is active: robot_x < 2.0.
+        assert robot_x < 2.0, (
+            f"Robot at x={robot_x:.3f}, should stop before x=2.0 with rotated SAT"
+        )

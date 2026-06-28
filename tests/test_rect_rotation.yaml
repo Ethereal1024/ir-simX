@@ -1,0 +1,18 @@
+world:
+  height: 10
+  width: 10
+  step_time: 0.1
+  offset: [0, 0]
+  collision_mode: 'stop'
+
+robot:
+  - kinematics: {name: 'diff'}
+    shape: {name: 'circle', radius: 0.2}
+    state: [1, 1, 0]
+    goal: [9, 9, 0]
+    vel_max: [2, 1]
+    behavior: {name: 'dash'}
+
+obstacle:
+  - shape: {name: 'rectangle', length: 2.0, width: 1.0}
+    state: [5, 5, 0.785]  # 45° rotation
