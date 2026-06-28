@@ -361,78 +361,82 @@ class reciprocal_vel_obs:
         return vo_list
 
     def vel_candidate(self, rvo_list):
-        vo_outside = []
-        vo_inside = []
-
         cur_vx = self.state[2]
         cur_vy = self.state[3]
 
         cur_vx_min = max((cur_vx - self.acce), -self.vxmax)
         cur_vx_max = min((cur_vx + self.acce), self.vxmax)
-
         cur_vy_min = max((cur_vy - self.acce), -self.vymax)
         cur_vy_max = min((cur_vy + self.acce), self.vymax)
 
-        for new_vx in np.arange(cur_vx_min, cur_vx_max, 0.05):
-            for new_vy in np.arange(cur_vy_min, cur_vy_max, 0.05):
-                if self.vo_out(new_vx, new_vy, rvo_list):
-                    vo_outside.append([new_vx, new_vy])
+        vx_grid = np.arange(cur_vx_min, cur_vx_max + 1e-9, 0.05)
+        vy_grid = np.arange(cur_vy_min, cur_vy_max + 1e-9, 0.05)
+        vx_2d, vy_2d = np.meshgrid(vx_grid, vy_grid, indexing="ij")
+        vx_flat = vx_2d.ravel()
+        vy_flat = vy_2d.ravel()
+        n_cand = len(vx_flat)
 
-                else:
-                    vo_inside.append([new_vx, new_vy])
+        if n_cand == 0 or not rvo_list:
+            return [], []
 
-        return vo_outside, vo_inside
+        # for each neighbor, compute cross products for all candidates at once
+        in_any_vo = np.zeros(n_cand, dtype=bool)
 
-    def vo_out(self, vx, vy, rvo_list):
         for rvo in rvo_list:
-            rel_vx = vx - rvo[0][0]
-            rel_vy = vy - rvo[0][1]
+            apex_x, apex_y = rvo[0]
+            lx, ly = rvo[1]
+            rx, ry = rvo[2]
 
-            rel_vector = [rel_vx, rel_vy]
+            rel_vx = vx_flat - apex_x
+            rel_vy = vy_flat - apex_y
 
-            if reciprocal_vel_obs.between_vector(rvo[1], rvo[2], rel_vector):
-                return False
+            cross_left = lx * rel_vy - ly * rel_vx
+            cross_right = rx * rel_vy - ry * rel_vx
 
-        return True
+            in_this_vo = (cross_left <= 0) & (cross_right >= 0)
+            in_any_vo |= in_this_vo
+
+        vo_outside_cand = np.stack([vx_flat[~in_any_vo], vy_flat[~in_any_vo]], axis=1)
+        vo_inside_cand = np.stack([vx_flat[in_any_vo], vy_flat[in_any_vo]], axis=1)
+
+        return vo_outside_cand.tolist(), vo_inside_cand.tolist()
 
     def vel_select(self, vo_outside, vo_inside):
         vel_des = [self.state[5], self.state[6]]
 
         if len(vo_outside) != 0:
-            return min(
-                vo_outside, key=lambda v: dist_hypot(v[0], v[1], vel_des[0], vel_des[1])
-            )
+            arr = np.asarray(vo_outside)
+            dx = arr[:, 0] - vel_des[0]
+            dy = arr[:, 1] - vel_des[1]
+            idx = (dx * dx + dy * dy).argmin()
+            return vo_outside[idx]
 
-        return min(vo_inside, key=lambda v: self.penalty(v, vel_des, self.factor))
+        arr = np.asarray(vo_inside)
+        scores = np.array([self.penalty(v, vel_des, self.factor) for v in arr])
+        idx = scores.argmin()
+        return vo_inside[idx]
 
     def penalty(self, vel, vel_des, factor):
+        s = self.state
+        x, y = s[0], s[1]
         tc_list = []
 
-        for moving in self.obs_state_list:
-            distance = dist_hypot(moving[0], moving[1], self.state[0], self.state[1])
-            diff = distance**2 - (self.state[4] + moving[4]) ** 2
-
-            if diff < 0:
-                diff = 0
-
+        if self.obs_state_list:
+            obs_arr = np.asarray(self.obs_state_list)
+            dx = obs_arr[:, 0] - x
+            dy = obs_arr[:, 1] - y
+            dist_sq = dx * dx + dy * dy
+            r_sum = s[4] + obs_arr[:, 4]
+            diff = np.maximum(dist_sq - r_sum * r_sum, 0.0)
             dis_vel = np.sqrt(diff)
-            vel_trans = [
-                2 * vel[0] - self.state[2] - moving[2],
-                2 * vel[1] - self.state[3] - moving[3],
-            ]
-            vel_trans_speed = np.sqrt(vel_trans[0] ** 2 + vel_trans[1] ** 2) + 1e-7
-
-            tc = dis_vel / vel_trans_speed
-
-            tc_list.append(tc)
-
-        # Time-to-collision with line segments
-        x = self.state[0]
-        y = self.state[1]
-        r = self.state[4]
+            vel_trans_x = 2 * vel[0] - s[2] - obs_arr[:, 2]
+            vel_trans_y = 2 * vel[1] - s[3] - obs_arr[:, 3]
+            vel_trans_speed = np.sqrt(vel_trans_x * vel_trans_x + vel_trans_y * vel_trans_y) + 1e-7
+            tcs = dis_vel / vel_trans_speed
+            tc_list.append(tcs.min())
 
         for seg in self.line_obs_list:
-            tc = self._tc_line_segment(x, y, r, vel, seg)
+            tc = self._tc_line_segment(x, y, s[4], vel, seg)
             tc_list.append(tc)
 
         if not tc_list:
