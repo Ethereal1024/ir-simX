@@ -69,6 +69,7 @@ int SimWorld::add_linestring_obstacle(const std::vector<Vec2>& verts) {
     o.verts = polygon_vertices_.back().data();
     o.compute_aabb();
     obstacles_.push_back(o);
+    rebuild_lidar_grid();
     return (int)obstacles_.size() - 1;
 }
 
