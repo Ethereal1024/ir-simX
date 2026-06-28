@@ -209,10 +209,45 @@ cpp/                         # C++ pybind11 扩展
 
 ### 待办
 
-- [ ] **S3: `object_base.py` 进一步拆分** — 提取 `get_vel_range`、`input_state_check` 等工具函数（~150 行）
-- [ ] **S4: `env_plot.py` 绘制方法提取** — `draw_trajectory`、`draw_points` 为 mixin 或 helper（~144 行）
-- [ ] **S5: `env_plot.py` 导出方法提取** — `save_figure` + `save_animate` → `env_plot_exporter.py`（~115 行）
-- [ ] **S6: `object_base.py` 工具函数提取** — `get_desired_omni_vel`、`get_init_Gh` 等（~100 行）
+#### P0：代码质量整理
+
+- [ ] **C1: 删除废弃子类文件（6 个）** — `world/robots/robot_diff/omni/acker.py` + `world/obstacles/obstacle_diff/omni/acker.py`（~150 行死代码，清理 import）
+- [ ] **C2: 清理 `world/__init__.py`** — 移除废弃子类 re-export、注释掉的 3D 导入
+- [ ] **C3: 移除 `object_base.py` 中未使用的 `HAS_C_CORE`** — 死 import + try/except 块
+- [ ] **C4: 移除 `util.py` 中仅测试用装饰器** — `validate_length`, `ensure_column_vector`, `ensure_numpy`, `time_it`, `time_it2`
+- [ ] **C5: 移除无效方法** — `ObjectBase.remove()`（`del self` 无效）、`plot_uncertainty` 空桩、`init_vertices` 断言属性
+- [ ] **C6: 移除 `EnvLogger.trace()` 和 `EnvLogger.success()`** — 从未被调用
+- [ ] **C7: 清理注释掉的死代码** — 全项目约 6 处
+
+#### P1：逻辑冗余
+
+- [ ] **R1: `_cpp_sim.py` 提取 `_pad_to_3()` 辅助函数** — 替换 4 处 vel-min/vel-max padding 重复
+- [ ] **R2: `_cpp_sim.py` 提取 `_sync_object()` 辅助函数** — 替换 robot 和 obstacle 相似的 sync 逻辑
+- [ ] **R3: 移动 `_cpp_sim.py` 中函数内部 import 到文件顶部** — `transform_point_with_state`, `rng`, `shapely`
+- [ ] **R4: `env_config.py` 提取 `_create_world_and_objects()`** — 合并 `initialize_objects` / `reload_objects` 的 90% 重复逻辑
+- [ ] **R5: 提取 `_MultiEnvStorage`** — 合并 3 个 config 文件的重复多环境存储模式
+- [ ] **R6: 提取 `_finalize_setup()`** — 合并 `env_base.py` 中 3 处重复的 build_tree/validate/setup 序列
+- [ ] **R7: 替换 `list comprehension` 副作用用法** — 全项目约 10 处
+- [ ] **R8: `env_base.py` 中 `_fast_sensor_step` 添加异常日志** — 替换 `except Exception: pass`
+
+#### P2：组织复杂度过高
+
+- [ ] **O1: `ObjectBase`（1870 行）拆分**
+  - 提取 RVO 属性为 `ObjectBaseRvoMixin`
+  - 提取目标管理为 `GoalManager` 类
+  - `__init__` 提取 `_init_*` 子方法
+- [ ] **O2: `env_base.py`（1501 行）拆分**
+  - 提取 `_draw_*` 方法到 `env_plot_helpers.py`
+  - 提取 CRUD/查询操作为 `EnvObjectManager` 类
+- [ ] **O3: `util.py`（1062 行）按职责拆分为子模块**
+  - `util/math.py` — 角度/距离工具
+  - `util/transform.py` — 坐标变换
+  - `util/types.py` — 类型检查/转换
+  - `util/io.py` — 文件操作
+- [ ] **O4: `object_base.py` 提取 `get_desired_omni_vel`、`input_state_check` 等工具函数（~150 行）**
+- [ ] **O5: `env_plot.py` 绘制方法提取** — `draw_trajectory`、`draw_points` 为 mixin 或 helper（~144 行）
+- [ ] **O6: `env_plot.py` 导出方法提取** — `save_figure` + `save_animate` → `env_plot_exporter.py`（~115 行）
+- [ ] **O7: `SensorFactory` 改用注册模式** — 与行为/运动学工厂一致，支持可扩展
 
 ### 迭代改进（Batch SIMD）
 
