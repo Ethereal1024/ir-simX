@@ -1,5 +1,12 @@
 # Changelog
 
+## X-1.1.3 (2026-06-28)
+
+- Docs:
+  - Rebrand README, CITATION.cff, SECURITY.md, and changelog for the IR-SIM-X fork.
+  - Remove upstream-specific files (`run_original.sh`, `pypi-publish.yml`).
+  - Normalize naming: `IR-SIM-X` (display), `X-1.1.x` (version prefix).
+
 ## X-1.1.2 (2026-06-28)
 
 - Fix:

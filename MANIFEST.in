@@ -1,1 +1,3 @@
 include cpp/include/*
+include CITATION.cff
+include changelog.md
