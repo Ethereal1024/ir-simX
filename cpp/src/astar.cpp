@@ -29,9 +29,35 @@ std::vector<float> AStarPlanner::plan(float sx, float sy, float gx, float gy) {
     int goal_x  = std::max(0, std::min(width - 1, int(gx / resolution)));
     int goal_y  = std::max(0, std::min(height - 1, int(gy / resolution)));
 
-    // Check start/goal are free
-    if (grid[start_y * width + start_x]) return result;  // blocked
-    if (grid[goal_y * width + goal_x]) return result;
+    // If start or goal is blocked, search nearest free neighbour
+    if (grid[start_y * width + start_x]) {
+        int best_d2 = width * width + height * height;
+        bool found_start = false;
+        for (int dy = -3; dy <= 3 && !found_start; dy++) {
+            for (int dx = -3; dx <= 3 && !found_start; dx++) {
+                int ny = start_y + dy, nx = start_x + dx;
+                if (ny < 0 || ny >= height || nx < 0 || nx >= width) continue;
+                if (grid[ny * width + nx]) continue;
+                int d2 = dy * dy + dx * dx;
+                if (d2 < best_d2) { best_d2 = d2; start_y = ny; start_x = nx; found_start = true; }
+            }
+        }
+        if (!found_start) return result;
+    }
+    if (grid[goal_y * width + goal_x]) {
+        int best_d2 = width * width + height * height;
+        bool found_goal = false;
+        for (int dy = -3; dy <= 3 && !found_goal; dy++) {
+            for (int dx = -3; dx <= 3 && !found_goal; dx++) {
+                int ny = goal_y + dy, nx = goal_x + dx;
+                if (ny < 0 || ny >= height || nx < 0 || nx >= width) continue;
+                if (grid[ny * width + nx]) continue;
+                int d2 = dy * dy + dx * dx;
+                if (d2 < best_d2) { best_d2 = d2; goal_y = ny; goal_x = nx; found_goal = true; }
+            }
+        }
+        if (!found_goal) return result;
+    }
 
     // A* state
     struct Node {

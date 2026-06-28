@@ -63,19 +63,20 @@ class AStarPlanner:
             self.y_width = round((self.max_y - self.origin_y) / self.resolution)
         self.motion = self.get_motion_model()
 
-        # C++ accelerated A* — always try to build a C++ planner with a grid
+        # C++ accelerated A* — deferred init (build grid only when first needed)
         self._c_planner = None
+        self._cpp_grid = grid
         try:
             from cpp._core import AStarPlanner as _CppAStar
+            self._CppAStar = _CppAStar
+        except ImportError:
+            self._CppAStar = None
 
-            if grid is None:
-                grid = self._build_grid()
-            cpp_grid = (np.asarray(grid, dtype=np.float64) > 50).astype(np.uint8)
-            self._c_planner = _CppAStar()
-            self._c_planner.set_grid(cpp_grid, self.x_width, self.y_width,
-                                     self.resolution)
-        except (ImportError, Exception):
-            pass
+        # Cache GeometryFactory for check_node (avoid creating per-call)
+        self._check_shape = {"name": "rectangle",
+                             "length": self.resolution,
+                             "width": self.resolution}
+        self._check_gf = GeometryFactory.create_geometry(**self._check_shape)
 
     def _build_grid(self) -> np.ndarray:
         """Build an occupancy grid by sampling each cell via Shapely collision."""
@@ -145,7 +146,18 @@ class AStarPlanner:
         Returns:
             (np.array): xy position array of the final path
         """
-        # ── C++ accelerated path (no animation, grid map available) ──
+        # ── C++ accelerated path (lazy init on first call) ──
+        if self._c_planner is None and self._CppAStar is not None and not show_animation:
+            try:
+                grid = self._cpp_grid
+                if grid is None:
+                    grid = self._build_grid()
+                cpp_grid = (np.asarray(grid, dtype=np.float64) > 50).astype(np.uint8)
+                self._c_planner = self._CppAStar()
+                self._c_planner.set_grid(cpp_grid, self.x_width, self.y_width,
+                                         self.resolution)
+            except Exception:
+                pass
         if self._c_planner is not None and not show_animation:
             sx = float(to_numpy(start_pose)[0].item()) - self.origin_x
             sy = float(to_numpy(start_pose)[1].item()) - self.origin_y
@@ -214,7 +226,8 @@ class AStarPlanner:
                     plt.pause(0.001)
 
             if current.x == goal_node.x and current.y == goal_node.y:
-                print("Find goal")
+                if show_animation:
+                    print("Find goal")
                 goal_node.parent_index = current.parent_index
                 goal_node.cost = current.cost
                 break
@@ -356,14 +369,7 @@ class AStarPlanner:
         Returns:
             ``True`` if a collision is detected.
         """
-        node_position = [x, y]
-        shape = {
-            "name": "rectangle",
-            "length": self.resolution,
-            "width": self.resolution,
-        }
-        gf = GeometryFactory.create_geometry(**shape)
-        geometry = gf.step(np.c_[node_position])
+        geometry = self._check_gf.step(np.c_[[x, y]])
         return self._map.is_collision(geometry)
 
     @staticmethod
